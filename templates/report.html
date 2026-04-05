@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>依恋类型报告 — {{ report.type_name_cn }}</title>
+  <style>
+    @font-face {
+      font-family: "Noto Sans SC";
+      font-style: normal;
+      font-weight: 400;
+      src: url("{{ font_url_regular }}") format("opentype");
+    }
+    @font-face {
+      font-family: "Noto Sans SC";
+      font-style: normal;
+      font-weight: 700;
+      src: url("{{ font_url_bold }}") format("opentype");
+    }
+    body {
+      font-family: "Noto Sans SC", sans-serif;
+      font-size: 11pt;
+      line-height: 1.6;
+      color: #222;
+      margin: 24px 32px;
+    }
+    h1 { font-size: 20pt; margin-bottom: 8px; }
+    .meta { color: #555; margin-bottom: 24px; font-size: 10pt; }
+    h2 { font-size: 14pt; margin-top: 20px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    .section-body { margin-top: 8px; }
+    .section-body h2 { font-size: 13pt; border: none; margin-top: 12px; }
+    .section-body h3 { font-size: 12pt; margin-top: 10px; }
+    hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <h1>依恋类型报告</h1>
+  <div class="meta">
+    <p>{{ report.nickname }}，你好。你的依恋倾向分型为：<strong>{{ report.type_name_cn }}</strong>（{{ report.type_code }}）</p>
+    <p>焦虑维度均分：{{ report.anxiety_score }}　回避维度均分：{{ report.avoidance_score }}</p>
+  </div>
+
+  <h2>总览</h2>
+  <div class="section-body">{{ report.sections.overview | safe }}</div>
+
+  <h2>关系模式</h2>
+  <div class="section-body">{{ report.sections.patterns | safe }}</div>
+
+  <h2>内在冲突</h2>
+  <div class="section-body">{{ report.sections.conflicts | safe }}</div>
+
+  <h2>相处与匹配</h2>
+  <div class="section-body">{{ report.sections.compatibility | safe }}</div>
+
+  <h2>练习建议</h2>
+  <div class="section-body">{{ report.sections.exercises | safe }}</div>
+</body>
+</html>
