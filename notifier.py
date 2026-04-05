@@ -5,12 +5,26 @@ import time
 from typing import Optional
 
 import resend
+from resend.exceptions import ResendError
 
 from config import Settings
 
 logger = logging.getLogger(__name__)
 
 _RESEND_FROM = "onboarding@resend.dev"
+
+
+def _format_send_error(exc: BaseException) -> str:
+    if isinstance(exc, ResendError):
+        parts = [
+            f"code={exc.code!r}",
+            f"type={exc.error_type!r}",
+            f"message={exc.message!r}",
+        ]
+        if exc.suggested_action:
+            parts.append(f"suggested_action={exc.suggested_action!r}")
+        return " ".join(parts)
+    return f"{type(exc).__name__}: {exc!s}"
 
 
 def _contact_log_suffix(contact: str) -> str:
@@ -80,6 +94,7 @@ def send_report_notification(
             return
         except Exception as e:
             last_exc = e
+            err_detail = _format_send_error(e)
             if attempt < max_attempts - 1:
                 wait = backoff_seconds[attempt] if attempt < len(backoff_seconds) else backoff_seconds[-1]
                 logger.error(
@@ -87,10 +102,17 @@ def send_report_notification(
                     attempt + 1,
                     max_attempts,
                     wait,
-                    type(e).__name__,
+                    err_detail,
                     extra={"response_id": response_id},
                 )
                 time.sleep(wait)
+            else:
+                logger.error(
+                    "notifier: resend failed after %s attempts: %s",
+                    max_attempts,
+                    err_detail,
+                    extra={"response_id": response_id},
+                )
 
     assert last_exc is not None
     raise last_exc
