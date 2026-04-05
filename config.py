@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     TALLY_WEBHOOK_SECRET: str = ""
 
     WECHAT_TOKEN: str = ""
+    WECHAT_APPID: str = ""
+    WECHAT_APPSECRET: str = ""
+    H5_BASE_URL: str = ""
 
     APP_ENV: str = "development"
     APP_VERSION: str = "1.0.0"

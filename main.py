@@ -5,6 +5,9 @@ import hashlib
 import hmac
 import json
 import logging
+import time
+import uuid
+import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Header, Request
@@ -13,11 +16,18 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from app_logging import setup_logging
 from classifier import classify_from_quiz
 from config import Settings, get_settings
-from models import QuizParseError, TallyWebhookPayload, parse_quiz_from_payload
+from models import (
+    QuizAnswers,
+    QuizH5SubmitBody,
+    QuizParseError,
+    TallyWebhookPayload,
+    parse_quiz_from_payload,
+)
 from notifier import send_report_notification
 from pdf_generator import render_report_pdf
 from report_builder import build_report
 from storage import upload_pdf_with_signed_url
+from wechat_pusher import send_report_link
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -52,11 +62,14 @@ def verify_tally_signature(body: bytes, signature_header: Optional[str], secret:
     return False
 
 
-def run_pipeline(payload: TallyWebhookPayload, settings: Settings) -> None:
-    response_id = payload.data.responseId
+def _run_report_core(
+    quiz: QuizAnswers,
+    response_id: str,
+    settings: Settings,
+    wechat_openid: str,
+) -> None:
     extra = {"response_id": response_id}
     try:
-        quiz = parse_quiz_from_payload(payload)
         type_code, ax, av = classify_from_quiz(quiz)
         logger.info(
             "classifier: type=%s anxiety=%s avoidance=%s",
@@ -79,8 +92,67 @@ def run_pipeline(payload: TallyWebhookPayload, settings: Settings) -> None:
             settings=settings,
             response_id=response_id,
         )
+        oid = (wechat_openid or "").strip()
+        if oid:
+            send_report_link(oid, url, quiz.nickname)
     except Exception:
         logger.exception("pipeline failed", extra=extra)
+
+
+def run_pipeline(payload: TallyWebhookPayload, settings: Settings) -> None:
+    response_id = payload.data.responseId
+    extra = {"response_id": response_id}
+    try:
+        quiz = parse_quiz_from_payload(payload)
+    except Exception:
+        logger.exception("pipeline failed", extra=extra)
+        return
+    _run_report_core(quiz, response_id, settings, "")
+
+
+def run_h5_pipeline(
+    quiz: QuizAnswers,
+    response_id: str,
+    settings: Settings,
+    openid: str,
+) -> None:
+    _run_report_core(quiz, response_id, settings, openid)
+
+
+def _wx_xml_local_name(tag: str) -> str:
+    if tag.startswith("{") and "}" in tag:
+        return tag.partition("}")[2]
+    return tag
+
+
+def _wx_xml_find_text(root: ET.Element, local: str) -> str:
+    for el in root.iter():
+        if _wx_xml_local_name(el.tag) == local:
+            return (el.text or "").strip()
+    return ""
+
+
+def _wx_welcome_body(settings: Settings) -> str:
+    base = (settings.H5_BASE_URL or "").strip().rstrip("/")
+    test_url = f"{base}/attachment-test" if base else "/attachment-test"
+    return (
+        "你好！我是知我实验室 👋\n\n"
+        f"点击开始依恋类型测试：\n{test_url}\n\n"
+        "完成后报告将自动发送到此对话。"
+    )
+
+
+def _wx_reply_text_xml(to_user: str, from_user: str, content: str) -> str:
+    ts = int(time.time())
+    return (
+        "<xml>"
+        f"<ToUserName><![CDATA[{to_user}]]></ToUserName>"
+        f"<FromUserName><![CDATA[{from_user}]]></FromUserName>"
+        f"<CreateTime>{ts}</CreateTime>"
+        "<MsgType><![CDATA[text]]></MsgType>"
+        f"<Content><![CDATA[{content}]]></Content>"
+        "</xml>"
+    )
 
 
 app = FastAPI(title="Attachment Report API")
@@ -117,6 +189,83 @@ def wechat_callback_verify(
     ):
         return Response(status_code=403, content="", media_type="text/plain")
     return PlainTextResponse(content=echostr)
+
+
+@app.post(
+    "/wechat/callback",
+    response_model=None,
+)
+async def wechat_callback_message(
+    request: Request,
+    signature: Optional[str] = None,
+    timestamp: Optional[str] = None,
+    nonce: Optional[str] = None,
+) -> Any:
+    """接收公众号消息（XML）；关注/文本回复引导文案，其它事件返回空串。"""
+    settings = get_settings()
+    if signature is None or timestamp is None or nonce is None:
+        return Response(status_code=403, content="", media_type="text/plain")
+    if not verify_wechat_server_url(
+        signature, timestamp, nonce, token=settings.WECHAT_TOKEN
+    ):
+        return Response(status_code=403, content="", media_type="text/plain")
+
+    raw = await request.body()
+    try:
+        text = raw.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return Response(content="", status_code=200, media_type="text/plain")
+
+    if not text:
+        return Response(content="", status_code=200, media_type="text/plain")
+
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        logger.warning("wechat callback: invalid XML body")
+        return Response(content="", status_code=200, media_type="text/plain")
+
+    from_user = _wx_xml_find_text(root, "FromUserName")
+    to_user = _wx_xml_find_text(root, "ToUserName")
+    msg_type = _wx_xml_find_text(root, "MsgType")
+    event = _wx_xml_find_text(root, "Event")
+
+    welcome = _wx_welcome_body(settings)
+
+    if msg_type == "event" and event.lower() == "subscribe":
+        xml = _wx_reply_text_xml(from_user, to_user, welcome)
+        return Response(
+            content=xml,
+            media_type="application/xml; charset=utf-8",
+        )
+
+    if msg_type == "text":
+        xml = _wx_reply_text_xml(from_user, to_user, welcome)
+        return Response(
+            content=xml,
+            media_type="application/xml; charset=utf-8",
+        )
+
+    return Response(content="", status_code=200, media_type="text/plain")
+
+
+@app.post("/quiz/submit", response_model=None)
+async def quiz_submit(
+    body: QuizH5SubmitBody,
+    background_tasks: BackgroundTasks,
+) -> Any:
+    try:
+        quiz = body.to_quiz_answers()
+    except QuizParseError as e:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "missing_required_fields", "fields": e.fields},
+        )
+    settings = get_settings()
+    response_id = str(uuid.uuid4())
+    openid = (body.openid or "").strip()
+    background_tasks.add_task(run_h5_pipeline, quiz, response_id, settings, openid)
+    return {"status": "processing"}
 
 
 @app.post("/webhook/tally", response_model=None)

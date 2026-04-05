@@ -39,6 +39,7 @@ def client(monkeypatch):
     import main as app_main
 
     monkeypatch.setattr(app_main, "run_pipeline", lambda *a, **k: None)
+    monkeypatch.setattr(app_main, "run_h5_pipeline", lambda *a, **k: None)
     return TestClient(app_main.app), secret
 
 
@@ -155,4 +156,141 @@ def test_wechat_callback_403_when_query_incomplete(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "t")
     c, _ = client
     r = c.get("/wechat/callback", params={"signature": "a", "timestamp": "b"})
+    assert r.status_code == 403
+
+
+def _h5_answers():
+    d = {}
+    for i in range(1, 7):
+        d[f"A{i}"] = 4
+        d[f"B{i}"] = 3
+    return d
+
+
+def test_quiz_submit_returns_processing(client):
+    c, _ = client
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "小月",
+            "contact": "u@example.com",
+            "openid": "oOPENID",
+            "answers": _h5_answers(),
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "processing"}
+
+
+def test_quiz_submit_openid_empty_ok(client):
+    c, _ = client
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "小月",
+            "contact": "u@example.com",
+            "openid": "",
+            "answers": _h5_answers(),
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "processing"}
+
+
+def test_quiz_submit_validation_error(client):
+    c, _ = client
+    answers = _h5_answers()
+    del answers["A2"]
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "x",
+            "contact": "a@b.com",
+            "openid": "",
+            "answers": answers,
+        },
+    )
+    assert r.status_code == 422
+    body = r.json()
+    assert body["error"] == "missing_required_fields"
+    assert "A2" in body["fields"]
+
+
+def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    monkeypatch.setenv("H5_BASE_URL", "https://h5.example.com")
+    c, _ = client
+    ts, nonce = "1700000002", "nonce-sub"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh_service]]></ToUserName>
+<FromUserName><![CDATA[oUserOpenId]]></FromUserName>
+<CreateTime>123456</CreateTime>
+<MsgType><![CDATA[event]]></MsgType>
+<Event><![CDATA[subscribe]]></Event>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+        headers={"Content-Type": "application/xml"},
+    )
+    assert r.status_code == 200
+    assert "xml" in r.headers.get("content-type", "")
+    assert "https://h5.example.com/attachment-test" in r.text
+    assert "oUserOpenId" in r.text
+    assert "gh_service" in r.text
+
+
+def test_wechat_post_text_returns_welcome_xml(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    monkeypatch.setenv("H5_BASE_URL", "https://x.com")
+    c, _ = client
+    ts, nonce = "1700000003", "n-text"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[fromU]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[hi]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "https://x.com/attachment-test" in r.text
+
+
+def test_wechat_post_other_event_empty_body(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    c, _ = client
+    ts, nonce = "1700000004", "n-other"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[event]]></MsgType>
+<Event><![CDATA[CLICK]]></Event>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert r.text == ""
+
+
+def test_wechat_post_invalid_signature_403(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "secret")
+    c, _ = client
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": "bad", "timestamp": "1", "nonce": "2"},
+        content=b"<xml></xml>",
+    )
     assert r.status_code == 403

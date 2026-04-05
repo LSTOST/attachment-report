@@ -41,6 +41,47 @@ class QuizAnswers(BaseModel):
     answers: dict[str, int]
 
 
+class QuizH5SubmitBody(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    nickname: str = ""
+    contact: str
+    openid: str = ""
+    answers: dict[str, int] = Field(default_factory=dict)
+
+    def to_quiz_answers(self) -> QuizAnswers:
+        nickname_raw = _field_value_to_str(self.nickname)
+        nickname = nickname_raw if nickname_raw else "你"
+        contact = _field_value_to_str(self.contact)
+        if not contact:
+            raise QuizParseError("contact is required", ["contact"])
+        contact_type = "email" if "@" in contact else "wechat"
+
+        answers: dict[str, int] = {}
+        for key, raw in self.answers.items():
+            if not ANSWER_KEY_PATTERN.match(key):
+                continue
+            try:
+                answers[key] = _field_value_to_int(raw)
+            except (ValueError, TypeError) as e:
+                raise QuizParseError(f"invalid answer for {key}: {e}", [key]) from e
+
+        missing = [k for k in ANSWER_KEYS if k not in answers]
+        if missing:
+            raise QuizParseError("missing required answer keys", sorted(missing))
+
+        out_of_range = [k for k, v in answers.items() if v < 1 or v > 7]
+        if out_of_range:
+            raise QuizParseError("answer values must be 1-7", sorted(out_of_range))
+
+        return QuizAnswers(
+            nickname=nickname,
+            contact=contact,
+            contact_type=contact_type,
+            answers=answers,
+        )
+
+
 class QuizParseError(Exception):
     def __init__(self, message: str, fields: Optional[List[str]] = None):
         super().__init__(message)
