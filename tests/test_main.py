@@ -107,3 +107,52 @@ def test_verify_tally_signature_accepts_sha256_hex_prefix():
     mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256)
     assert verify_tally_signature(body, "sha256=" + mac.hexdigest(), secret)
     assert verify_tally_signature(body, base64.b64encode(mac.digest()).decode("ascii"), secret)
+
+
+def _wechat_signature(token: str, timestamp: str, nonce: str) -> str:
+    raw = "".join(sorted((token, timestamp, nonce)))
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def test_wechat_callback_returns_echostr(client, monkeypatch):
+    token = "wechat-test-token"
+    monkeypatch.setenv("WECHAT_TOKEN", token)
+    c, _ = client
+    ts, nonce = "1700000000", "random-nonce"
+    sig = _wechat_signature(token, ts, nonce)
+    r = c.get(
+        "/wechat/callback",
+        params={
+            "signature": sig,
+            "timestamp": ts,
+            "nonce": nonce,
+            "echostr": "plain-echo-123",
+        },
+    )
+    assert r.status_code == 200
+    assert r.text == "plain-echo-123"
+    assert "text/plain" in r.headers.get("content-type", "")
+
+
+def test_wechat_callback_403_on_bad_signature(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "correct-token")
+    c, _ = client
+    r = c.get(
+        "/wechat/callback",
+        params={
+            "signature": "deadbeef" * 5,
+            "timestamp": "1",
+            "nonce": "2",
+            "echostr": "x",
+        },
+    )
+    assert r.status_code == 403
+    assert r.text == ""
+    assert "text/plain" in r.headers.get("content-type", "")
+
+
+def test_wechat_callback_403_when_query_incomplete(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "t")
+    c, _ = client
+    r = c.get("/wechat/callback", params={"signature": "a", "timestamp": "b"})
+    assert r.status_code == 403

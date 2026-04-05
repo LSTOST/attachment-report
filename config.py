@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     TALLY_WEBHOOK_SECRET: str = ""
 
+    WECHAT_TOKEN: str = ""
+
     APP_ENV: str = "development"
     APP_VERSION: str = "1.0.0"
 
