@@ -19,9 +19,6 @@ class Settings(BaseSettings):
 
     TALLY_WEBHOOK_SECRET: str = ""
 
-    # 微信公众号「服务器配置」Token，与 mp 后台一致，用于 GET /wechat/callback 校验
-    WECHAT_TOKEN: str = ""
-
     APP_ENV: str = "development"
     APP_VERSION: str = "1.0.0"
 

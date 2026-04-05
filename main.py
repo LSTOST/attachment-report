@@ -8,7 +8,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Header, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse
 
 from app_logging import setup_logging
 from classifier import classify_from_quiz
@@ -21,20 +21,6 @@ from storage import upload_pdf_with_signed_url
 
 setup_logging()
 logger = logging.getLogger(__name__)
-
-
-def verify_wechat_server_url(
-    signature: str, timestamp: str, nonce: str, *, token: str
-) -> bool:
-    """微信公众平台：GET 验证 URL 时校验 signature（token、timestamp、nonce 字典序拼接后 SHA1）。"""
-    if not token:
-        return False
-    raw = "".join(sorted((token, timestamp, nonce)))
-    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()
-    sig = signature.strip().lower()
-    if len(sig) != len(digest):
-        return False
-    return hmac.compare_digest(digest, sig)
 
 
 def verify_tally_signature(body: bytes, signature_header: Optional[str], secret: str) -> bool:
@@ -90,29 +76,6 @@ app = FastAPI(title="Attachment Report API")
 def health() -> Dict[str, str]:
     s = get_settings()
     return {"status": "ok", "version": s.APP_VERSION}
-
-
-@app.get("/wechat/callback", response_class=PlainTextResponse)
-def wechat_callback_verify(
-    signature: Optional[str] = None,
-    timestamp: Optional[str] = None,
-    nonce: Optional[str] = None,
-    echostr: Optional[str] = None,
-) -> Response | PlainTextResponse:
-    """微信服务器验证：校验 signature 通过后原样返回 echostr（text/plain）。"""
-    settings = get_settings()
-    if (
-        signature is None
-        or timestamp is None
-        or nonce is None
-        or echostr is None
-    ):
-        return Response(status_code=403, content="", media_type="text/plain")
-    if not verify_wechat_server_url(
-        signature, timestamp, nonce, token=settings.WECHAT_TOKEN
-    ):
-        return Response(status_code=403, content="", media_type="text/plain")
-    return PlainTextResponse(content=echostr)
 
 
 @app.post("/webhook/tally", response_model=None)
