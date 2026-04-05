@@ -13,10 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY attachment-report/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY attachment-report/ .
+COPY . .
 
 RUN mkdir -p static/fonts \
     && wget -q -O static/fonts/NotoSansSC-Regular.otf \
