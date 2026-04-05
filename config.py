@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     OSS_URL_EXPIRY_SECONDS: int = 604800
 
     SMTP_HOST: str = ""
-    SMTP_PORT: int = 465
+    SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
 
