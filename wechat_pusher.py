@@ -81,7 +81,7 @@ def get_access_token(settings: Optional[Settings] = None) -> Optional[str]:
 
 
 def send_report_link(openid: str, response_id: str, nickname: str) -> None:
-    """客服消息：文本报告链接，地址为 {H5_BASE_URL}/api/download/{response_id}。失败仅打 ERROR 日志，不抛异常。"""
+    """客服消息：文本报告链接，地址为 {H5_BASE_URL}/report/{response_id}。失败仅打 ERROR 日志，不抛异常。"""
     try:
         settings = get_settings()
         token = get_access_token(settings)
@@ -94,9 +94,9 @@ def send_report_link(openid: str, response_id: str, nickname: str) -> None:
 
         base = (settings.H5_BASE_URL or "").strip().rstrip("/")
         download_url = (
-            f"{base}/api/download/{response_id}"
+            f"{base}/report/{response_id}"
             if base
-            else f"/api/download/{response_id}"
+            else f"/report/{response_id}"
         )
         content = (
             f"{nickname}，你的依恋类型报告已生成 ✨\n\n"
