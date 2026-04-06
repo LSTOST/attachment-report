@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import oss2
+from oss2.exceptions import NoSuchKey
 
 from config import Settings
 
 logger = logging.getLogger(__name__)
+
+_RESPONSE_ID_SAFE = re.compile(r"^[0-9A-Za-z_.-]+$")
 
 
 def _object_key(response_id: str, now: Optional[datetime] = None) -> str:
@@ -55,3 +59,31 @@ def upload_pdf_with_signed_url(
 
     assert last_exc is not None
     raise last_exc
+
+
+def get_pdf_bytes(response_id: str, settings: Settings) -> bytes:
+    """从 OSS 读取已上传的报告 PDF（按 upload 时的日期路径或前缀扫描）。"""
+    if not _RESPONSE_ID_SAFE.fullmatch(response_id):
+        raise ValueError("invalid response_id")
+    if not settings.OSS_ACCESS_KEY_ID or not settings.OSS_ACCESS_KEY_SECRET:
+        raise ValueError("OSS credentials not configured")
+
+    auth = oss2.Auth(settings.OSS_ACCESS_KEY_ID, settings.OSS_ACCESS_KEY_SECRET)
+    bucket = oss2.Bucket(auth, settings.OSS_ENDPOINT, settings.OSS_BUCKET_NAME)
+    suffix = f"/{response_id}.pdf"
+
+    now = datetime.now(timezone.utc)
+    for i in range(400):
+        dt = now - timedelta(days=i)
+        ymd = dt.strftime("%Y%m%d")
+        key = f"reports/{ymd}/{response_id}.pdf"
+        try:
+            return bucket.get_object(key).read()
+        except NoSuchKey:
+            continue
+
+    for obj in oss2.ObjectIterator(bucket, prefix="reports/"):
+        if obj.key.endswith(suffix):
+            return bucket.get_object(obj.key).read()
+
+    raise FileNotFoundError(response_id)

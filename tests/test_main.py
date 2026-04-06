@@ -264,7 +264,7 @@ def test_wechat_post_text_returns_welcome_xml(client, monkeypatch):
     assert "https://x.com/attachment-test" in r.text
 
 
-def test_wechat_post_other_event_empty_body(client, monkeypatch):
+def test_wechat_post_click_unknown_key_returns_coming_soon(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     c, _ = client
     ts, nonce = "1700000004", "n-other"
@@ -275,6 +275,7 @@ def test_wechat_post_other_event_empty_body(client, monkeypatch):
 <CreateTime>1</CreateTime>
 <MsgType><![CDATA[event]]></MsgType>
 <Event><![CDATA[CLICK]]></Event>
+<EventKey><![CDATA[OTHER_KEY]]></EventKey>
 </xml>"""
     r = c.post(
         "/wechat/callback",
@@ -282,7 +283,7 @@ def test_wechat_post_other_event_empty_body(client, monkeypatch):
         content=xml_body.encode("utf-8"),
     )
     assert r.status_code == 200
-    assert r.text == ""
+    assert "功能开发中" in r.text
 
 
 def test_wechat_post_invalid_signature_403(client, monkeypatch):
@@ -294,3 +295,45 @@ def test_wechat_post_invalid_signature_403(client, monkeypatch):
         content=b"<xml></xml>",
     )
     assert r.status_code == 403
+
+
+def test_download_pdf_ok(client, monkeypatch):
+    import main as app_main
+
+    monkeypatch.setattr(
+        app_main,
+        "get_pdf_bytes",
+        lambda response_id, settings: b"%PDF-1.4 unit",
+    )
+    c, _ = client
+    r = c.get("/download/resp-abc123")
+    assert r.status_code == 200
+    assert r.content == b"%PDF-1.4 unit"
+    assert r.headers.get("content-type") == "application/pdf"
+    cd = r.headers.get("content-disposition", "")
+    assert "attachment" in cd.lower()
+    assert "filename*=utf-8''" in cd.lower()
+
+
+def test_download_pdf_not_found(client, monkeypatch):
+    import main as app_main
+
+    def _raise(_rid, _s):
+        raise FileNotFoundError(_rid)
+
+    monkeypatch.setattr(app_main, "get_pdf_bytes", _raise)
+    c, _ = client
+    r = c.get("/download/missing-id")
+    assert r.status_code == 404
+
+
+def test_download_pdf_bad_request(client, monkeypatch):
+    import main as app_main
+
+    def _bad(_rid, _s):
+        raise ValueError("bad id")
+
+    monkeypatch.setattr(app_main, "get_pdf_bytes", _bad)
+    c, _ = client
+    r = c.get("/download/x")
+    assert r.status_code == 400

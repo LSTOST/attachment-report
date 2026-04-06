@@ -94,7 +94,7 @@ def send_report_link(openid: str, download_url: str, nickname: str) -> None:
 
         content = (
             f"{nickname}，你的依恋类型报告已生成 ✨\n\n"
-            f"点击下载报告（7天内有效）：\n{download_url}\n\n"
+            f"点击下载报告：\n{download_url}\n\n"
             "—— 知我实验室"
         )
         payload = {
