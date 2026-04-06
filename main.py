@@ -162,29 +162,20 @@ def _wx_text_reply_quiz_link(settings: Settings) -> str:
     )
 
 
-def _wx_text_reply_report(settings: Settings) -> str:
-    return (
-        "请先完成依恋类型测试，报告将在完成后自动发送。\n\n"
-        f"点击开始测试：{_wx_attachment_test_url(settings)}"
-    )
+WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST = "ATTACHMENT_TEST"
+WECHAT_MENU_EVENT_KEY_CONTACT_US = "CONTACT_US"
+WECHAT_REPLY_CONTACT_FEEDBACK = "如有疑问或建议？欢迎添加微信：SentioLab 进行反馈"
+WECHAT_REPLY_COMING_SOON = "功能开发中，敬请期待"
 
 
-def _wx_text_reply_body(settings: Settings, content: str) -> str:
-    """关键词顺序：兑换码 → 优惠码 → 依恋/测试/开始 → 报告 → 默认。"""
+def _wx_text_reply_body(content: str) -> str:
+    """文本关键词顺序：兑换码 → 优惠码 → 默认（含「报告」「依恋」等一律走默认）。"""
     t = content.casefold()
     if "兑换码" in t:
         return "恭喜你 获得兑换码一枚 👉 CQV9ZL5PJPND"
     if "优惠码" in t:
         return "恭喜你 获得免单优惠码一枚 👉 HP9-4TT2-QX7P"
-    if "依恋" in t or "测试" in t or "开始" in t:
-        return _wx_text_reply_quiz_link(settings)
-    if "报告" in t:
-        return _wx_text_reply_report(settings)
-    return "如有疑问或建议？欢迎添加微信：SentioLab 进行反馈"
-
-
-WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST = "ATTACHMENT_TEST"
-WECHAT_REPLY_COMING_SOON = "功能开发中，敬请期待"
+    return WECHAT_REPLY_CONTACT_FEEDBACK
 
 
 def _wx_reply_text_xml(to_user: str, from_user: str, content: str) -> str:
@@ -322,7 +313,9 @@ async def wechat_callback_message(
         )
 
     if msg_type == "event" and event.upper() == "CLICK":
-        if event_key == WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST:
+        if event_key == WECHAT_MENU_EVENT_KEY_CONTACT_US:
+            body = WECHAT_REPLY_CONTACT_FEEDBACK
+        elif event_key == WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST:
             body = _wx_text_reply_quiz_link(settings)
         else:
             body = WECHAT_REPLY_COMING_SOON
@@ -335,7 +328,7 @@ async def wechat_callback_message(
     if msg_type == "text":
         raw_content = _wx_xml_find_text(root, "Content")
         text = raw_content.strip()
-        reply_body = _wx_text_reply_body(settings, text)
+        reply_body = _wx_text_reply_body(text)
         xml = _wx_reply_text_xml(from_user, to_user, reply_body)
         return Response(
             content=xml,
