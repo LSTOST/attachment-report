@@ -84,10 +84,6 @@ def _run_report_core(
         url = upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
         logger.info("storage: uploaded, signed download URL generated", extra=extra)
         expiry_days = max(1, settings.OSS_URL_EXPIRY_SECONDS // 86400)
-        base = (settings.H5_BASE_URL or "").strip().rstrip("/")
-        wechat_download_url = (
-            f"{base}/download/{response_id}" if base else f"/download/{response_id}"
-        )
         send_report_notification(
             contact=quiz.contact,
             contact_type=quiz.contact_type,
@@ -99,7 +95,7 @@ def _run_report_core(
         )
         oid = (wechat_openid or "").strip()
         if oid:
-            send_report_link(oid, wechat_download_url, quiz.nickname)
+            send_report_link(oid, response_id, quiz.nickname)
     except Exception:
         logger.exception("pipeline failed", extra=extra)
 
