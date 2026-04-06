@@ -382,6 +382,51 @@ def test_wechat_post_click_contact_us(client, monkeypatch):
     assert "进行反馈" in r.text
 
 
+def test_wechat_post_click_contact_us_event_key_case_insensitive(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    c, _ = client
+    ts, nonce = "1700000015", "n-contact2"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[event]]></MsgType>
+<Event><![CDATA[CLICK]]></Event>
+<EventKey><![CDATA[contact_us]]></EventKey>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "进行反馈" in r.text
+
+
+def test_wechat_post_text_redeem_uses_xml_newlines(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    c, _ = client
+    ts, nonce = "1700000016", "n-nl"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[兑换码]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "&#10;" in r.text
+    assert "CQV9ZL5PJPND" in r.text
+    assert "恭喜你" in r.text
+
+
 def test_wechat_post_click_unknown_key_returns_coming_soon(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     c, _ = client

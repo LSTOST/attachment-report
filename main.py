@@ -172,10 +172,26 @@ def _wx_text_reply_body(content: str) -> str:
     """文本关键词顺序：兑换码 → 优惠码 → 默认（含「报告」「依恋」等一律走默认）。"""
     t = content.casefold()
     if "兑换码" in t:
-        return "恭喜你 获得兑换码一枚 👉 CQV9ZL5PJPND"
+        return "恭喜你 🎉\n获得兑换码一枚\n👉 CQV9ZL5PJPND"
     if "优惠码" in t:
-        return "恭喜你 获得免单优惠码一枚 👉 HP9-4TT2-QX7P"
+        return "恭喜你 🎉\n获得免单优惠码一枚\n👉 HP9-4TT2-QX7P"
     return WECHAT_REPLY_CONTACT_FEEDBACK
+
+
+def _wx_xml_escape_text_for_content(content: str) -> str:
+    """被动回复正文：&<> 转义；换行使用 &#10;（微信要求，勿用 CDATA+\\n）。"""
+    return (
+        content.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "&#10;")
+        .replace("\r", "")
+    )
+
+
+def _wx_normalize_menu_event_key(raw: str) -> str:
+    """菜单 CLICK 的 EventKey 做 strip；微信端偶发空格或大小写差异。"""
+    return (raw or "").strip()
 
 
 def _wx_reply_text_xml(to_user: str, from_user: str, content: str) -> str:
@@ -186,7 +202,7 @@ def _wx_reply_text_xml(to_user: str, from_user: str, content: str) -> str:
         f"<FromUserName><![CDATA[{from_user}]]></FromUserName>"
         f"<CreateTime>{ts}</CreateTime>"
         "<MsgType><![CDATA[text]]></MsgType>"
-        f"<Content><![CDATA[{content}]]></Content>"
+        f"<Content>{_wx_xml_escape_text_for_content(content)}</Content>"
         "</xml>"
     )
 
@@ -313,9 +329,10 @@ async def wechat_callback_message(
         )
 
     if msg_type == "event" and event.upper() == "CLICK":
-        if event_key == WECHAT_MENU_EVENT_KEY_CONTACT_US:
+        ek = _wx_normalize_menu_event_key(event_key).upper()
+        if ek == WECHAT_MENU_EVENT_KEY_CONTACT_US:
             body = WECHAT_REPLY_CONTACT_FEEDBACK
-        elif event_key == WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST:
+        elif ek == WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST:
             body = _wx_text_reply_quiz_link(settings)
         else:
             body = WECHAT_REPLY_COMING_SOON
