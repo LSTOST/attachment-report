@@ -45,7 +45,7 @@ class QuizH5SubmitBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     nickname: str = ""
-    contact: str
+    contact: Optional[str] = ""
     openid: str = ""
     answers: dict[str, int] = Field(default_factory=dict)
 
@@ -53,9 +53,10 @@ class QuizH5SubmitBody(BaseModel):
         nickname_raw = _field_value_to_str(self.nickname)
         nickname = nickname_raw if nickname_raw else "你"
         contact = _field_value_to_str(self.contact)
-        if not contact:
-            raise QuizParseError("contact is required", ["contact"])
-        contact_type = "email" if "@" in contact else "wechat"
+        if contact:
+            contact_type = "email" if "@" in contact else "wechat"
+        else:
+            contact_type = "wechat"
 
         answers: dict[str, int] = {}
         for key, raw in self.answers.items():

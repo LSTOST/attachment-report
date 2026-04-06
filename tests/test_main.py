@@ -197,6 +197,22 @@ def test_quiz_submit_openid_empty_ok(client):
     assert r.json() == {"status": "processing"}
 
 
+def test_quiz_submit_empty_contact_uses_wechat_and_openid_ok(client):
+    """H5 不填联系方式时 contact 为空，触达依赖 openid；contact_type 为 wechat。"""
+    c, _ = client
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "小月",
+            "contact": "",
+            "openid": "oOPENID",
+            "answers": _h5_answers(),
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "processing"}
+
+
 def test_quiz_submit_validation_error(client):
     c, _ = client
     answers = _h5_answers()
