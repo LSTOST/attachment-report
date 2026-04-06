@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import markdown
-
 from classifier import TypeCode
 
 TYPE_DIR: dict[str, str] = {
@@ -55,16 +53,13 @@ def build_report(
         )
 
     sections: dict[str, str] = {}
-    md = markdown.Markdown(extensions=["nl2br", "sane_lists"])
 
     for name in SECTION_FILES:
         path = root / f"{name}.md"
         if not path.is_file():
             raise FileNotFoundError(f"missing content file: {path}")
 
-        raw = path.read_text(encoding="utf-8")
-        md.reset()
-        sections[name] = md.convert(raw)
+        sections[name] = path.read_text(encoding="utf-8")
 
     return ReportData(
         type_code=type_code,

@@ -13,7 +13,8 @@ def test_build_report_all_types(code: str):
     assert r.nickname == "测试"
     for name in ("overview", "patterns", "conflicts", "compatibility", "exercises"):
         assert name in r.sections
-        assert "<" in r.sections[name]
+        # sections 为原始 Markdown，非 HTML
+        assert "#" in r.sections[name] or r.sections[name].strip()
 
 
 def test_unknown_type_raises():

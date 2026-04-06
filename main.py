@@ -27,7 +27,12 @@ from models import (
 from notifier import send_report_notification
 from pdf_generator import render_report_pdf
 from report_builder import build_report
-from storage import get_pdf_bytes, upload_pdf_with_signed_url
+from storage import (
+    get_pdf_bytes,
+    get_report_json,
+    upload_pdf_with_signed_url,
+    upload_report_json,
+)
 from wechat_pusher import send_report_link
 
 setup_logging()
@@ -80,6 +85,7 @@ def _run_report_core(
             extra=extra,
         )
         report = build_report(type_code, ax, av, quiz.nickname)
+        upload_report_json(report, response_id, settings)
         pdf_bytes = render_report_pdf(report)
         url = upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
         logger.info("storage: uploaded, signed download URL generated", extra=extra)
@@ -204,6 +210,19 @@ def download_pdf(response_id: str) -> Any:
         media_type="application/pdf",
         headers={"Content-Disposition": disp},
     )
+
+
+@app.get("/report-data/{response_id}", response_model=None)
+def report_data(response_id: str) -> Any:
+    """从 OSS 读取生成报告时写入的结构化 JSON（sections 为原始 Markdown）。"""
+    settings = get_settings()
+    try:
+        data = get_report_json(response_id, settings)
+    except ValueError:
+        return Response(status_code=400)
+    except FileNotFoundError:
+        return Response(status_code=404)
+    return JSONResponse(content=data)
 
 
 @app.get(

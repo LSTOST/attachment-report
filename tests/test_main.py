@@ -337,3 +337,49 @@ def test_download_pdf_bad_request(client, monkeypatch):
     c, _ = client
     r = c.get("/download/x")
     assert r.status_code == 400
+
+
+def test_report_data_ok(client, monkeypatch):
+    import main as app_main
+
+    payload = {
+        "type_code": "SECURE",
+        "type_name_cn": "安全型",
+        "anxiety_score": 3.0,
+        "avoidance_score": 3.0,
+        "nickname": "小月",
+        "sections": {"overview": "# 标题\n正文"},
+    }
+    monkeypatch.setattr(
+        app_main,
+        "get_report_json",
+        lambda response_id, settings: payload,
+    )
+    c, _ = client
+    r = c.get("/report-data/resp-abc123")
+    assert r.status_code == 200
+    assert r.json() == payload
+
+
+def test_report_data_not_found(client, monkeypatch):
+    import main as app_main
+
+    def _missing(_rid, _s):
+        raise FileNotFoundError(_rid)
+
+    monkeypatch.setattr(app_main, "get_report_json", _missing)
+    c, _ = client
+    r = c.get("/report-data/missing-id")
+    assert r.status_code == 404
+
+
+def test_report_data_bad_request(client, monkeypatch):
+    import main as app_main
+
+    def _bad(_rid, _s):
+        raise ValueError("bad id")
+
+    monkeypatch.setattr(app_main, "get_report_json", _bad)
+    c, _ = client
+    r = c.get("/report-data/x")
+    assert r.status_code == 400
