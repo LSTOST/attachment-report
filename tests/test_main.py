@@ -237,12 +237,15 @@ def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
     )
     assert r.status_code == 200
     assert "xml" in r.headers.get("content-type", "")
+    assert "欢迎关注知我实验室" in r.text
+    assert "https://hepaima.kyx123.com" in r.text
     assert "https://h5.example.com/attachment-test" in r.text
+    assert "SentioLab" in r.text
     assert "oUserOpenId" in r.text
     assert "gh_service" in r.text
 
 
-def test_wechat_post_text_returns_welcome_xml(client, monkeypatch):
+def test_wechat_post_text_default_reply(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
     c, _ = client
@@ -261,7 +264,101 @@ def test_wechat_post_text_returns_welcome_xml(client, monkeypatch):
         content=xml_body.encode("utf-8"),
     )
     assert r.status_code == 200
+    assert "SentioLab" in r.text
+    assert "进行反馈" in r.text
+    assert "attachment-test" not in r.text
+
+
+def test_wechat_post_text_keyword_redeem_code(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    c, _ = client
+    ts, nonce = "1700000010", "n-redeem"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[给我兑换码]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "CQV9ZL5PJPND" in r.text
+
+
+def test_wechat_post_text_keyword_coupon_before_report(client, monkeypatch):
+    """含「优惠码」与「报告」时优先匹配优惠码分支。"""
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    monkeypatch.setenv("H5_BASE_URL", "https://x.com")
+    c, _ = client
+    ts, nonce = "1700000011", "n-coupon"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[优惠码报告]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "HP9-4TT2-QX7P" in r.text
+    assert "请先完成" not in r.text
+
+
+def test_wechat_post_text_report_keyword(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    monkeypatch.setenv("H5_BASE_URL", "https://x.com")
+    c, _ = client
+    ts, nonce = "1700000012", "n-report"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[报告]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "请先完成依恋类型测试" in r.text
     assert "https://x.com/attachment-test" in r.text
+
+
+def test_wechat_post_text_quiz_keyword_start(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    monkeypatch.setenv("H5_BASE_URL", "https://x.com")
+    c, _ = client
+    ts, nonce = "1700000013", "n-start"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[开始]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "点击开始依恋类型测试" in r.text
+    assert "https://x.com/attachment-test" in r.text
+    assert "✨" in r.text
 
 
 def test_wechat_post_click_unknown_key_returns_coming_soon(client, monkeypatch):

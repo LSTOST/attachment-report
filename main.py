@@ -144,27 +144,47 @@ def _wx_attachment_test_url(settings: Settings) -> str:
     return f"{base}/attachment-test" if base else "/attachment-test"
 
 
-def _wx_quiz_link_reply(settings: Settings) -> str:
-    url = _wx_attachment_test_url(settings)
-    return f"点击开始依恋类型测试：\n{url}"
-
-
-def _wx_welcome_body(settings: Settings) -> str:
+def _wx_subscribe_welcome_body(settings: Settings) -> str:
     return (
-        "你好！我是知我实验室 👋\n\n"
-        f"{_wx_quiz_link_reply(settings)}\n\n"
-        "完成后报告将自动发送到此对话。"
+        "欢迎关注知我实验室 👋\n\n"
+        "🔍 了解你们的契合度：\n"
+        "https://hepaima.kyx123.com\n\n"
+        "🧠 测测你的依恋类型：\n"
+        f"{_wx_attachment_test_url(settings)}\n\n"
+        "如有疑问或建议，欢迎添加微信：SentioLab"
     )
 
 
-def _wx_default_guide_body(settings: Settings) -> str:
-    """非关键词文本的默认引导（与欢迎语一致，便于用户再次查看入口）。"""
-    return _wx_welcome_body(settings)
+def _wx_text_reply_quiz_link(settings: Settings) -> str:
+    return (
+        f"点击开始依恋类型测试：\n{_wx_attachment_test_url(settings)}\n\n"
+        "完成后报告将自动发送到此对话 ✨"
+    )
+
+
+def _wx_text_reply_report(settings: Settings) -> str:
+    return (
+        "请先完成依恋类型测试，报告将在完成后自动发送。\n\n"
+        f"点击开始测试：{_wx_attachment_test_url(settings)}"
+    )
+
+
+def _wx_text_reply_body(settings: Settings, content: str) -> str:
+    """关键词顺序：兑换码 → 优惠码 → 依恋/测试/开始 → 报告 → 默认。"""
+    t = content.casefold()
+    if "兑换码" in t:
+        return "恭喜你 获得兑换码一枚 👉 CQV9ZL5PJPND"
+    if "优惠码" in t:
+        return "恭喜你 获得免单优惠码一枚 👉 HP9-4TT2-QX7P"
+    if "依恋" in t or "测试" in t or "开始" in t:
+        return _wx_text_reply_quiz_link(settings)
+    if "报告" in t:
+        return _wx_text_reply_report(settings)
+    return "如有疑问或建议？欢迎添加微信：SentioLab 进行反馈"
 
 
 WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST = "ATTACHMENT_TEST"
 WECHAT_REPLY_COMING_SOON = "功能开发中，敬请期待"
-WECHAT_REPLY_REPORT_PENDING = "请完成测试后等待报告自动发送"
 
 
 def _wx_reply_text_xml(to_user: str, from_user: str, content: str) -> str:
@@ -262,7 +282,7 @@ async def wechat_callback_message(
     timestamp: Optional[str] = None,
     nonce: Optional[str] = None,
 ) -> Any:
-    """接收公众号消息（XML）：关注欢迎、菜单 CLICK、关键词与默认文本回复；其它类型返回空。"""
+    """接收公众号消息（XML）：关注欢迎、菜单 CLICK、文本关键词回复；其它类型返回空。"""
     settings = get_settings()
     if signature is None or timestamp is None or nonce is None:
         return Response(status_code=403, content="", media_type="text/plain")
@@ -292,10 +312,10 @@ async def wechat_callback_message(
     event = _wx_xml_find_text(root, "Event")
     event_key = _wx_xml_find_text(root, "EventKey")
 
-    welcome = _wx_welcome_body(settings)
+    subscribe_welcome = _wx_subscribe_welcome_body(settings)
 
     if msg_type == "event" and event.lower() == "subscribe":
-        xml = _wx_reply_text_xml(from_user, to_user, welcome)
+        xml = _wx_reply_text_xml(from_user, to_user, subscribe_welcome)
         return Response(
             content=xml,
             media_type="application/xml; charset=utf-8",
@@ -303,7 +323,7 @@ async def wechat_callback_message(
 
     if msg_type == "event" and event.upper() == "CLICK":
         if event_key == WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST:
-            body = _wx_quiz_link_reply(settings)
+            body = _wx_text_reply_quiz_link(settings)
         else:
             body = WECHAT_REPLY_COMING_SOON
         xml = _wx_reply_text_xml(from_user, to_user, body)
@@ -315,12 +335,7 @@ async def wechat_callback_message(
     if msg_type == "text":
         raw_content = _wx_xml_find_text(root, "Content")
         text = raw_content.strip()
-        if text == "报告":
-            reply_body = WECHAT_REPLY_REPORT_PENDING
-        elif "依恋" in text or "测试" in text:
-            reply_body = _wx_quiz_link_reply(settings)
-        else:
-            reply_body = _wx_default_guide_body(settings)
+        reply_body = _wx_text_reply_body(settings, text)
         xml = _wx_reply_text_xml(from_user, to_user, reply_body)
         return Response(
             content=xml,
