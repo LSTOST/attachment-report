@@ -172,9 +172,17 @@ def _wx_text_reply_body(content: str) -> str:
     """文本关键词顺序：兑换码 → 优惠码 → 默认（含「报告」「依恋」等一律走默认）。"""
     t = content.casefold()
     if "兑换码" in t:
-        return "恭喜你 🎉\n获得兑换码一枚\n👉 CQV9ZL5PJPND"
+        return (
+            "恭喜你 🎉\n"
+            "获得兑换码一枚\n"
+            "👉 CQV9ZL5PJPND"
+        )
     if "优惠码" in t:
-        return "恭喜你 🎉\n获得免单优惠码一枚\n👉 HP9-4TT2-QX7P"
+        return (
+            "恭喜你 🎉\n"
+            "获得免单优惠码一枚\n"
+            "👉 HP9-4TT2-QX7P"
+        )
     return WECHAT_REPLY_CONTACT_FEEDBACK
 
 
