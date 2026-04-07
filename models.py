@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ANSWER_KEYS = [f"{p}{n}" for p in ("A", "B") for n in range(1, 7)]
 ANSWER_KEY_PATTERN = re.compile(r"^[AB]\d$")
@@ -50,18 +50,28 @@ class QuizH5SubmitBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     nickname: str = ""
-    contact: Optional[str] = ""
+    contact: str = Field(default="", description="可选；空则按微信 openid 触达")
     openid: str = ""
     answers: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("contact", mode="before")
+    @classmethod
+    def _contact_coerce_optional(cls, v: Any) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return str(v).strip()
 
     def to_quiz_answers(self) -> QuizAnswers:
         nickname_raw = _field_value_to_str(self.nickname)
         nickname = nickname_raw if nickname_raw else "你"
         contact = _field_value_to_str(self.contact)
-        if contact:
-            contact_type = "email" if "@" in contact else "wechat"
-        else:
+        if not contact:
+            contact = "wechat"
             contact_type = "wechat"
+        else:
+            contact_type = "email" if "@" in contact else "wechat"
 
         answers: dict[str, int] = {}
         for key, raw in self.answers.items():

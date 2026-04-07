@@ -213,6 +213,35 @@ def test_quiz_submit_empty_contact_uses_wechat_and_openid_ok(client):
     assert r.json() == {"status": "processing"}
 
 
+def test_quiz_submit_omit_contact_ok(client):
+    c, _ = client
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "小月",
+            "openid": "oOPENID",
+            "answers": _h5_answers(),
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "processing"}
+
+
+def test_quiz_submit_contact_null_ok(client):
+    c, _ = client
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "小月",
+            "contact": None,
+            "openid": "oOPENID",
+            "answers": _h5_answers(),
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "processing"}
+
+
 def test_quiz_submit_lowercase_answer_keys_ok(client):
     """前端若传 a1/b6 等小写键，须与 A1/B6 等同视之，避免最后一题被判缺字段。"""
     c, _ = client
