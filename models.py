@@ -9,6 +9,11 @@ ANSWER_KEYS = [f"{p}{n}" for p in ("A", "B") for n in range(1, 7)]
 ANSWER_KEY_PATTERN = re.compile(r"^[AB]\d$")
 
 
+def _normalize_answer_key(key: str) -> str:
+    """H5/表单可能传 a1、b6 等；仅 A1–A6、B1–B6 计入。"""
+    return (key or "").strip().upper()
+
+
 class TallyField(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -60,12 +65,13 @@ class QuizH5SubmitBody(BaseModel):
 
         answers: dict[str, int] = {}
         for key, raw in self.answers.items():
-            if not ANSWER_KEY_PATTERN.match(key):
+            nk = _normalize_answer_key(key)
+            if not ANSWER_KEY_PATTERN.match(nk):
                 continue
             try:
-                answers[key] = _field_value_to_int(raw)
+                answers[nk] = _field_value_to_int(raw)
             except (ValueError, TypeError) as e:
-                raise QuizParseError(f"invalid answer for {key}: {e}", [key]) from e
+                raise QuizParseError(f"invalid answer for {nk}: {e}", [nk]) from e
 
         missing = [k for k in ANSWER_KEYS if k not in answers]
         if missing:
@@ -102,8 +108,21 @@ def _field_value_to_int(value: Any) -> int:
         raise ValueError("boolean not allowed")
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError("non-integer float")
+        return int(value)
     if isinstance(value, str):
-        return int(value.strip())
+        s = value.strip()
+        if not s:
+            raise ValueError("empty string")
+        # 兼容 "4" / "4.0"（部分组件返回字符串浮点）
+        if "." in s:
+            f = float(s)
+            if not f.is_integer():
+                raise ValueError("non-integer in string")
+            return int(f)
+        return int(s)
     raise ValueError(f"cannot convert to int: {type(value)}")
 
 
@@ -123,12 +142,13 @@ def parse_quiz_from_payload(payload: TallyWebhookPayload) -> QuizAnswers:
 
     answers: dict[str, int] = {}
     for f in payload.data.fields:
-        if not ANSWER_KEY_PATTERN.match(f.key):
+        nk = _normalize_answer_key(f.key)
+        if not ANSWER_KEY_PATTERN.match(nk):
             continue
         try:
-            answers[f.key] = _field_value_to_int(f.value)
+            answers[nk] = _field_value_to_int(f.value)
         except (ValueError, TypeError) as e:
-            raise QuizParseError(f"invalid answer for {f.key}: {e}", [f.key]) from e
+            raise QuizParseError(f"invalid answer for {nk}: {e}", [nk]) from e
 
     missing = [k for k in ANSWER_KEYS if k not in answers]
     if missing:

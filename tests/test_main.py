@@ -213,6 +213,41 @@ def test_quiz_submit_empty_contact_uses_wechat_and_openid_ok(client):
     assert r.json() == {"status": "processing"}
 
 
+def test_quiz_submit_lowercase_answer_keys_ok(client):
+    """前端若传 a1/b6 等小写键，须与 A1/B6 等同视之，避免最后一题被判缺字段。"""
+    c, _ = client
+    answers = {}
+    for i in range(1, 7):
+        answers[f"a{i}"] = 4
+        answers[f"b{i}"] = 3
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "小月",
+            "contact": "u@example.com",
+            "openid": "",
+            "answers": answers,
+        },
+    )
+    assert r.status_code == 200
+    assert r.json() == {"status": "processing"}
+
+
+def test_quiz_submit_float_answer_values_ok(client):
+    c, _ = client
+    answers = {f"A{i}": 4.0 for i in range(1, 7)} | {f"B{i}": 3.0 for i in range(1, 7)}
+    r = c.post(
+        "/quiz/submit",
+        json={
+            "nickname": "x",
+            "contact": "a@b.com",
+            "openid": "",
+            "answers": answers,
+        },
+    )
+    assert r.status_code == 200
+
+
 def test_quiz_submit_validation_error(client):
     c, _ = client
     answers = _h5_answers()
