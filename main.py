@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+from pathlib import Path
 import logging
 import time
 import uuid
@@ -34,6 +35,27 @@ from storage import (
     upload_report_json,
 )
 from wechat_pusher import send_report_link
+
+OPENID_REPORT_MAP = Path(__file__).parent / "data" / "openid_report.json"
+OPENID_REPORT_MAP.parent.mkdir(exist_ok=True)
+
+
+def save_openid_report(openid: str, response_id: str) -> None:
+    try:
+        data = json.loads(OPENID_REPORT_MAP.read_text()) if OPENID_REPORT_MAP.exists() else {}
+        data[openid] = response_id
+        OPENID_REPORT_MAP.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def get_latest_report(openid: str) -> str | None:
+    try:
+        data = json.loads(OPENID_REPORT_MAP.read_text()) if OPENID_REPORT_MAP.exists() else {}
+        return data.get(openid)
+    except Exception:
+        return None
+
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -124,6 +146,8 @@ def run_h5_pipeline(
     openid: str,
 ) -> None:
     _run_report_core(quiz, response_id, settings, openid)
+    if openid:
+        save_openid_report(openid, response_id)
 
 
 def _wx_xml_local_name(tag: str) -> str:
@@ -168,8 +192,20 @@ WECHAT_REPLY_CONTACT_FEEDBACK = "如有疑问或建议？欢迎添加微信：Se
 WECHAT_REPLY_COMING_SOON = "功能开发中，敬请期待"
 
 
-def _wx_text_reply_body(content: str) -> str:
-    """文本关键词顺序：兑换码 → 优惠码 → 默认（含「报告」「依恋」等一律走默认）。"""
+def _wx_text_reply_report(settings: Settings, openid: str = "") -> str:
+    response_id = get_latest_report(openid) if openid else None
+    if response_id:
+        base = (settings.H5_BASE_URL or "").rstrip("/")
+        url = f"{base}/report/{response_id}"
+        return f"找到你的报告啦 👇\n{url}\n\n建议截图保存，链接长期有效。"
+    return (
+        "暂时找不到你的报告记录。\n\n"
+        f"点击重新测试：{_wx_attachment_test_url(settings)}"
+    )
+
+
+def _wx_text_reply_body(settings: Settings, content: str, openid: str = "") -> str:
+    """文本关键词顺序：兑换码 → 优惠码 →「报告」→ 默认。"""
     t = content.casefold()
     if "兑换码" in t:
         return (
@@ -183,6 +219,8 @@ def _wx_text_reply_body(content: str) -> str:
             "获得免单优惠码一枚\n"
             "👉 HP9-4TT2-QX7P"
         )
+    if "报告" in t:
+        return _wx_text_reply_report(settings, openid)
     return WECHAT_REPLY_CONTACT_FEEDBACK
 
 
@@ -353,7 +391,7 @@ async def wechat_callback_message(
     if msg_type == "text":
         raw_content = _wx_xml_find_text(root, "Content")
         text = raw_content.strip()
-        reply_body = _wx_text_reply_body(text)
+        reply_body = _wx_text_reply_body(settings, text, from_user)
         xml = _wx_reply_text_xml(from_user, to_user, reply_body)
         return Response(
             content=xml,

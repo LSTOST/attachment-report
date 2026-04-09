@@ -393,7 +393,7 @@ def test_wechat_post_text_keyword_coupon_before_other_words(client, monkeypatch)
     assert "HP9-4TT2-QX7P" in r.text
 
 
-def test_wechat_post_text_report_falls_back_to_default(client, monkeypatch):
+def test_wechat_post_text_report_no_history_shows_retest_link(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
     c, _ = client
@@ -412,8 +412,34 @@ def test_wechat_post_text_report_falls_back_to_default(client, monkeypatch):
         content=xml_body.encode("utf-8"),
     )
     assert r.status_code == 200
-    assert "进行反馈" in r.text
-    assert "attachment-test" not in r.text
+    assert "暂时找不到你的报告记录" in r.text
+    assert "https://x.com/attachment-test" in r.text
+
+
+def test_wechat_post_text_report_with_stored_id(client, monkeypatch):
+    import main as app_main
+
+    monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
+    monkeypatch.setenv("H5_BASE_URL", "https://x.com")
+    monkeypatch.setattr(app_main, "get_latest_report", lambda oid: "resp-saved-9" if oid == "u" else None)
+    c, _ = client
+    ts, nonce = "1700000012b", "n-report2"
+    sig = _wechat_signature("wx-tok", ts, nonce)
+    xml_body = """<xml>
+<ToUserName><![CDATA[gh]]></ToUserName>
+<FromUserName><![CDATA[u]]></FromUserName>
+<CreateTime>1</CreateTime>
+<MsgType><![CDATA[text]]></MsgType>
+<Content><![CDATA[报告]]></Content>
+</xml>"""
+    r = c.post(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce},
+        content=xml_body.encode("utf-8"),
+    )
+    assert r.status_code == 200
+    assert "找到你的报告啦" in r.text
+    assert "https://x.com/report/resp-saved-9" in r.text
 
 
 def test_wechat_post_text_start_falls_back_to_default(client, monkeypatch):
