@@ -98,9 +98,10 @@ def send_report_link(openid: str, response_id: str, nickname: str) -> None:
             if base
             else f"/report/{response_id}"
         )
+        prefix = f"{nickname}，" if nickname and nickname != "你" else ""
         content = (
-            f"{nickname}，你的依恋类型报告已生成 ✨\n\n"
-            f"点击下载报告：\n{download_url}\n\n"
+            f"{prefix}你的依恋类型报告已生成 ✨\n\n"
+            f"点击查看报告：\n{download_url}\n\n"
             "—— 知我实验室"
         )
         payload = {
