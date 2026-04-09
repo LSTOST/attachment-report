@@ -175,7 +175,7 @@ def _wx_subscribe_welcome_body(settings: Settings) -> str:
         "https://hepaima.kyx123.com\n\n"
         "🧠 测测你的依恋类型：\n"
         f"{_wx_attachment_test_url(settings)}\n\n"
-        "如有疑问或建议，欢迎添加微信：SentioLab"
+        "如有疑问或建议，欢迎添加微信：SentioLab 进行反馈"
     )
 
 
@@ -188,7 +188,7 @@ def _wx_text_reply_quiz_link(settings: Settings) -> str:
 
 WECHAT_MENU_EVENT_KEY_ATTACHMENT_TEST = "ATTACHMENT_TEST"
 WECHAT_MENU_EVENT_KEY_CONTACT_US = "CONTACT_US"
-WECHAT_REPLY_CONTACT_FEEDBACK = "如有疑问或建议？欢迎添加微信：SentioLab 进行反馈"
+WECHAT_REPLY_CONTACT_FEEDBACK = "如有疑问或建议，请添加微信：SentioLab 进行反馈"
 WECHAT_REPLY_COMING_SOON = "功能开发中，敬请期待"
 
 
