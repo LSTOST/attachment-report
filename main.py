@@ -111,6 +111,8 @@ def _run_report_core(
         pdf_bytes = render_report_pdf(report)
         url = upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
         logger.info("storage: uploaded, signed download URL generated", extra=extra)
+        if wechat_openid:
+            save_openid_report(wechat_openid, response_id)
         expiry_days = max(1, settings.OSS_URL_EXPIRY_SECONDS // 86400)
         send_report_notification(
             contact=quiz.contact,
@@ -146,8 +148,6 @@ def run_h5_pipeline(
     openid: str,
 ) -> None:
     _run_report_core(quiz, response_id, settings, openid)
-    if openid:
-        save_openid_report(openid, response_id)
 
 
 def _wx_xml_local_name(tag: str) -> str:
