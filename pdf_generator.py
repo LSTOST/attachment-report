@@ -8,6 +8,27 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from report_builder import SECTION_FILES, ReportData
 
+# PDF 内各章节首行 H1：{type_name_cn}依恋 • {章节名}：
+SECTION_PDF_H1_LABEL: dict[str, str] = {
+    "overview": "深度解读",
+    "patterns": "关系模式",
+    "conflicts": "内在冲突",
+    "compatibility": "相处与匹配",
+    "exercises": "练习建议",
+}
+
+PDF_DOCUMENT_TITLE = "依恋类型 • 深度解读报告"
+
+
+def _rewrite_section_h1_for_pdf(md: str, type_name_cn: str, section_key: str) -> str:
+    label = SECTION_PDF_H1_LABEL[section_key]
+    new_h1 = f"# {type_name_cn}依恋 • {label}："
+    lines = md.splitlines()
+    if lines and lines[0].lstrip().startswith("#"):
+        lines[0] = new_h1
+        return "\n".join(lines)
+    return f"{new_h1}\n\n{md}"
+
 
 def _base_dir() -> Path:
     return Path(__file__).resolve().parent
@@ -34,7 +55,10 @@ def _report_with_html_sections(report: ReportData) -> ReportData:
     html_sections: dict[str, str] = {}
     for name in SECTION_FILES:
         md.reset()
-        html_sections[name] = md.convert(report.sections[name])
+        raw = _rewrite_section_h1_for_pdf(
+            report.sections[name], report.type_name_cn, name
+        )
+        html_sections[name] = md.convert(raw)
     return replace(report, sections=html_sections)
 
 
@@ -58,6 +82,7 @@ def render_report_pdf(report: ReportData) -> bytes:
     report_html = _report_with_html_sections(report)
     html_str = template.render(
         report=report_html,
+        pdf_document_title=PDF_DOCUMENT_TITLE,
         font_url_regular=font_url_regular,
         font_url_bold=font_url_bold,
         font_format=font_format,

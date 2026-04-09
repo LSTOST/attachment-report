@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>依恋类型报告 — {{ report.type_name_cn }}</title>
+  <title>{{ pdf_document_title }} — {{ report.type_name_cn }}</title>
   <style>
     @font-face {
       font-family: "Noto Sans SC";
@@ -33,7 +33,7 @@
   </style>
 </head>
 <body>
-  <h1>依恋类型报告</h1>
+  <h1>{{ pdf_document_title }}</h1>
   <div class="meta">
     <p>{{ report.nickname }}，你好。你的依恋倾向分型为：<strong>{{ report.type_name_cn }}</strong>（{{ report.type_code }}）</p>
     <p>焦虑维度均分：{{ report.anxiety_score }}　回避维度均分：{{ report.avoidance_score }}</p>
