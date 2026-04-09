@@ -442,7 +442,7 @@ def test_wechat_post_text_report_with_stored_id(client, monkeypatch):
     assert "https://x.com/report/resp-saved-9" in r.text
 
 
-def test_wechat_post_text_start_falls_back_to_default(client, monkeypatch):
+def test_wechat_post_text_start_returns_quiz_link(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
     c, _ = client
@@ -461,8 +461,8 @@ def test_wechat_post_text_start_falls_back_to_default(client, monkeypatch):
         content=xml_body.encode("utf-8"),
     )
     assert r.status_code == 200
-    assert "进行反馈" in r.text
-    assert "attachment-test" not in r.text
+    assert "点击开始依恋类型测试" in r.text
+    assert "https://x.com/attachment-test" in r.text
 
 
 def test_wechat_post_click_contact_us(client, monkeypatch):
