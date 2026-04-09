@@ -79,10 +79,14 @@ def render_report_pdf(report: ReportData) -> bytes:
     font_url_regular = font_regular.as_uri()
     font_url_bold = font_bold.as_uri()
 
+    qrcode_path = static_dir / "qrcode.png"
+    qrcode_url = qrcode_path.as_uri() if qrcode_path.is_file() else None
+
     report_html = _report_with_html_sections(report)
     html_str = template.render(
         report=report_html,
         pdf_document_title=PDF_DOCUMENT_TITLE,
+        qrcode_url=qrcode_url,
         font_url_regular=font_url_regular,
         font_url_bold=font_url_bold,
         font_format=font_format,
