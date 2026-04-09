@@ -205,7 +205,7 @@ def _wx_text_reply_report(settings: Settings, openid: str = "") -> str:
 
 
 def _wx_text_reply_body(settings: Settings, content: str, openid: str = "") -> str:
-    """文本关键词顺序：兑换码 → 优惠码 → 依恋/测试/开始 →「报告」→ 默认。"""
+    """关键词顺序：兑换码 → 优惠码 → 报告 → 依恋/测试/开始 → 默认。"""
     t = content.casefold()
     if "兑换码" in t:
         return (
@@ -219,10 +219,10 @@ def _wx_text_reply_body(settings: Settings, content: str, openid: str = "") -> s
             "获得免单优惠码一枚\n"
             "👉 HP9-4TT2-QX7P"
         )
-    if "依恋" in t or "测试" in t or "开始" in t:
-        return _wx_text_reply_quiz_link(settings)
     if "报告" in t:
         return _wx_text_reply_report(settings, openid)
+    if "依恋" in t or "测试" in t or "开始" in t:
+        return _wx_text_reply_quiz_link(settings)
     return WECHAT_REPLY_CONTACT_FEEDBACK
 
 
