@@ -419,7 +419,7 @@ async def quiz_submit(
     response_id = str(uuid.uuid4())
     openid = (body.openid or "").strip()
     background_tasks.add_task(run_h5_pipeline, quiz, response_id, settings, openid)
-    return {"status": "processing"}
+    return {"status": "processing", "responseId": response_id}
 
 
 @app.post("/webhook/tally", response_model=None)

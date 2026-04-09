@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -167,6 +168,13 @@ def _h5_answers():
     return d
 
 
+def _assert_quiz_submit_processing(r):
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "processing"
+    uuid.UUID(data["responseId"])
+
+
 def test_quiz_submit_returns_processing(client):
     c, _ = client
     r = c.post(
@@ -178,8 +186,7 @@ def test_quiz_submit_returns_processing(client):
             "answers": _h5_answers(),
         },
     )
-    assert r.status_code == 200
-    assert r.json() == {"status": "processing"}
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_openid_empty_ok(client):
@@ -193,8 +200,7 @@ def test_quiz_submit_openid_empty_ok(client):
             "answers": _h5_answers(),
         },
     )
-    assert r.status_code == 200
-    assert r.json() == {"status": "processing"}
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_empty_contact_uses_wechat_and_openid_ok(client):
@@ -209,8 +215,7 @@ def test_quiz_submit_empty_contact_uses_wechat_and_openid_ok(client):
             "answers": _h5_answers(),
         },
     )
-    assert r.status_code == 200
-    assert r.json() == {"status": "processing"}
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_omit_contact_ok(client):
@@ -223,8 +228,7 @@ def test_quiz_submit_omit_contact_ok(client):
             "answers": _h5_answers(),
         },
     )
-    assert r.status_code == 200
-    assert r.json() == {"status": "processing"}
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_contact_null_ok(client):
@@ -238,8 +242,7 @@ def test_quiz_submit_contact_null_ok(client):
             "answers": _h5_answers(),
         },
     )
-    assert r.status_code == 200
-    assert r.json() == {"status": "processing"}
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_lowercase_answer_keys_ok(client):
@@ -258,8 +261,7 @@ def test_quiz_submit_lowercase_answer_keys_ok(client):
             "answers": answers,
         },
     )
-    assert r.status_code == 200
-    assert r.json() == {"status": "processing"}
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_float_answer_values_ok(client):
@@ -274,7 +276,7 @@ def test_quiz_submit_float_answer_values_ok(client):
             "answers": answers,
         },
     )
-    assert r.status_code == 200
+    _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_validation_error(client):
