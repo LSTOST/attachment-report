@@ -4,9 +4,10 @@ import base64
 import hashlib
 import hmac
 import json
-from pathlib import Path
 import logging
+import threading
 import time
+from pathlib import Path
 import uuid
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional
@@ -27,7 +28,7 @@ from models import (
 )
 from notifier import send_report_notification
 from pdf_generator import render_report_pdf
-from report_builder import build_report
+from report_builder import ReportData, build_report
 from storage import (
     get_pdf_bytes,
     get_report_json,
@@ -90,6 +91,32 @@ def verify_tally_signature(body: bytes, signature_header: Optional[str], secret:
     return False
 
 
+def _run_report_pdf_phase(
+    report: ReportData,
+    quiz: QuizAnswers,
+    response_id: str,
+    settings: Settings,
+) -> None:
+    """阶段二：生成并上传 PDF，再发邮件通知（失败仅打日志）。"""
+    extra = {"response_id": response_id}
+    try:
+        pdf_bytes = render_report_pdf(report)
+        url = upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
+        logger.info("storage: uploaded, signed download URL generated", extra=extra)
+        expiry_days = max(1, settings.OSS_URL_EXPIRY_SECONDS // 86400)
+        send_report_notification(
+            contact=quiz.contact,
+            contact_type=quiz.contact_type,
+            nickname=quiz.nickname,
+            download_url=url,
+            expiry_days=expiry_days,
+            settings=settings,
+            response_id=response_id,
+        )
+    except Exception:
+        logger.exception("pdf pipeline failed", extra=extra)
+
+
 def _run_report_core(
     quiz: QuizAnswers,
     response_id: str,
@@ -108,24 +135,19 @@ def _run_report_core(
         )
         report = build_report(type_code, ax, av, quiz.nickname)
         upload_report_json(report, response_id, settings)
-        pdf_bytes = render_report_pdf(report)
-        url = upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
-        logger.info("storage: uploaded, signed download URL generated", extra=extra)
-        if wechat_openid:
-            save_openid_report(wechat_openid, response_id)
-        expiry_days = max(1, settings.OSS_URL_EXPIRY_SECONDS // 86400)
-        send_report_notification(
-            contact=quiz.contact,
-            contact_type=quiz.contact_type,
-            nickname=quiz.nickname,
-            download_url=url,
-            expiry_days=expiry_days,
-            settings=settings,
-            response_id=response_id,
-        )
+
         oid = (wechat_openid or "").strip()
         if oid:
             send_report_link(oid, response_id, quiz.nickname)
+        if wechat_openid:
+            save_openid_report(wechat_openid, response_id)
+
+        threading.Thread(
+            target=_run_report_pdf_phase,
+            args=(report, quiz, response_id, settings),
+            daemon=True,
+            name=f"report-pdf-{response_id[:8]}",
+        ).start()
     except Exception:
         logger.exception("pipeline failed", extra=extra)
 

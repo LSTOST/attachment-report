@@ -81,7 +81,10 @@ def get_access_token(settings: Optional[Settings] = None) -> Optional[str]:
 
 
 def send_report_link(openid: str, response_id: str, nickname: str) -> None:
-    """客服消息：文本报告链接，地址为 {H5_BASE_URL}/report/{response_id}。失败仅打 ERROR 日志，不抛异常。"""
+    """客服消息：推送 H5 报告页链接（{H5_BASE_URL}/report/{response_id}）。
+
+    与主流程中 PDF 生成解耦，可先于 PDF 上传到达用户。失败仅打 ERROR 日志，不抛异常。
+    """
     try:
         settings = get_settings()
         token = get_access_token(settings)
