@@ -17,7 +17,7 @@ SECTION_PDF_H1_LABEL: dict[str, str] = {
     "exercises": "练习建议",
 }
 
-PDF_DOCUMENT_TITLE = "依恋类型 • 深度解读报告"
+PDF_DOCUMENT_TITLE = "依恋报告 • 深度解读"
 
 
 def _rewrite_section_h1_for_pdf(md: str, type_name_cn: str, section_key: str) -> str:

@@ -30,29 +30,34 @@
     .section-body h2 { font-size: 13pt; border: none; margin-top: 12px; }
     .section-body h3 { font-size: 12pt; margin-top: 10px; }
     hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
-    /* 末页：服务号二维码（独立一页，内容贴底居中） */
+    /* 末页：服务号二维码（独立一页，内容贴底；内层 text-align 便于 WeasyPrint 水平居中） */
     .pdf-end-footer {
       page-break-before: always;
       box-sizing: border-box;
       min-height: 250mm;
+      width: 100%;
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
-      align-items: center;
       padding-bottom: 18mm;
       page-break-inside: avoid;
     }
-    .pdf-end-footer img {
+    .pdf-end-footer-inner {
+      width: 100%;
+      text-align: center;
+    }
+    .pdf-end-footer-inner img {
       width: 60mm;
       height: 60mm;
       object-fit: contain;
-      display: block;
+      display: inline-block;
+      vertical-align: bottom;
     }
     .pdf-end-footer-note {
-      margin-top: 4mm;
+      margin-top: 5mm;
       margin-bottom: 0;
-      font-size: 9pt;
-      line-height: 1.4;
+      font-size: 11pt;
+      line-height: 1.45;
       color: #8A8AAA;
       text-align: center;
     }
@@ -82,8 +87,10 @@
 
   {% if qrcode_url %}
   <div class="pdf-end-footer">
-    <img src="{{ qrcode_url }}" alt="服务号二维码" />
-    <p class="pdf-end-footer-note">知我实验室出品 · 仅供个人参考</p>
+    <div class="pdf-end-footer-inner">
+      <img src="{{ qrcode_url }}" alt="服务号二维码" />
+      <p class="pdf-end-footer-note">知我实验室出品 · 仅供个人参考</p>
+    </div>
   </div>
   {% endif %}
 </body>
