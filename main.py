@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -13,7 +12,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
-from fastapi import BackgroundTasks, FastAPI, Header, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from app_logging import setup_logging
@@ -23,10 +22,7 @@ from models import (
     QuizAnswers,
     QuizH5SubmitBody,
     QuizParseError,
-    TallyWebhookPayload,
-    parse_quiz_from_payload,
 )
-from notifier import send_report_notification
 from pdf_generator import render_report_pdf
 from report_builder import ReportData, build_report
 from storage import (
@@ -76,43 +72,17 @@ def verify_wechat_server_url(
     return hmac.compare_digest(digest, sig)
 
 
-def verify_tally_signature(body: bytes, signature_header: Optional[str], secret: str) -> bool:
-    """Tally 文档：HMAC-SHA256(secret, body)，digest 为 base64；另兼容 `sha256=<hex>` 形式。"""
-    if not secret or not signature_header:
-        return False
-    sig = signature_header.strip()
-    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256)
-    expected_b64 = base64.b64encode(mac.digest()).decode("ascii")
-    if hmac.compare_digest(sig, expected_b64):
-        return True
-    if sig.lower().startswith("sha256="):
-        hex_part = sig.split("=", 1)[1].strip()
-        return hmac.compare_digest(hex_part.lower(), mac.hexdigest().lower())
-    return False
-
-
 def _run_report_pdf_phase(
     report: ReportData,
-    quiz: QuizAnswers,
     response_id: str,
     settings: Settings,
 ) -> None:
-    """阶段二：生成并上传 PDF，再发邮件通知（失败仅打日志）。"""
+    """阶段二：生成并上传 PDF（失败仅打日志）。"""
     extra = {"response_id": response_id}
     try:
         pdf_bytes = render_report_pdf(report)
-        url = upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
-        logger.info("storage: uploaded, signed download URL generated", extra=extra)
-        expiry_days = max(1, settings.OSS_URL_EXPIRY_SECONDS // 86400)
-        send_report_notification(
-            contact=quiz.contact,
-            contact_type=quiz.contact_type,
-            nickname=quiz.nickname,
-            download_url=url,
-            expiry_days=expiry_days,
-            settings=settings,
-            response_id=response_id,
-        )
+        upload_pdf_with_signed_url(pdf_bytes, response_id, settings)
+        logger.info("storage: pdf uploaded", extra=extra)
     except Exception:
         logger.exception("pdf pipeline failed", extra=extra)
 
@@ -144,23 +114,12 @@ def _run_report_core(
 
         threading.Thread(
             target=_run_report_pdf_phase,
-            args=(report, quiz, response_id, settings),
+            args=(report, response_id, settings),
             daemon=True,
             name=f"report-pdf-{response_id[:8]}",
         ).start()
     except Exception:
         logger.exception("pipeline failed", extra=extra)
-
-
-def run_pipeline(payload: TallyWebhookPayload, settings: Settings) -> None:
-    response_id = payload.data.responseId
-    extra = {"response_id": response_id}
-    try:
-        quiz = parse_quiz_from_payload(payload)
-    except Exception:
-        logger.exception("pipeline failed", extra=extra)
-        return
-    _run_report_core(quiz, response_id, settings, "")
 
 
 def run_h5_pipeline(
@@ -444,31 +403,3 @@ async def quiz_submit(
     return {"status": "processing", "responseId": response_id}
 
 
-@app.post("/webhook/tally", response_model=None)
-async def tally_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    tally_signature: Optional[str] = Header(default=None, alias="Tally-Signature"),
-) -> Any:
-    settings = get_settings()
-    body = await request.body()
-
-    if not verify_tally_signature(body, tally_signature, settings.TALLY_WEBHOOK_SECRET):
-        return JSONResponse(status_code=400, content={"error": "invalid_signature"})
-
-    try:
-        raw = json.loads(body.decode("utf-8"))
-        payload = TallyWebhookPayload.model_validate(raw)
-    except Exception:
-        return JSONResponse(status_code=422, content={"error": "invalid_payload"})
-
-    try:
-        parse_quiz_from_payload(payload)
-    except QuizParseError as e:
-        return JSONResponse(
-            status_code=422,
-            content={"error": "missing_required_fields", "fields": e.fields},
-        )
-
-    background_tasks.add_task(run_pipeline, payload, settings)
-    return {"status": "received", "responseId": payload.data.responseId}

@@ -1,114 +1,8 @@
-import base64
 import hashlib
-import hmac
-import json
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-
-
-def _sign_body(body: bytes, secret: str) -> str:
-    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
-    return base64.b64encode(mac).decode("ascii")
-
-
-def _full_payload():
-    fields = [
-        {"key": "nickname", "label": "昵称", "value": "小月"},
-        {"key": "contact", "label": "联系方式", "value": "user@example.com"},
-    ]
-    for i in range(1, 7):
-        fields.append({"key": f"A{i}", "label": f"A{i}", "value": 4})
-        fields.append({"key": f"B{i}", "label": f"B{i}", "value": 3})
-    return {
-        "eventId": "evt-1",
-        "eventType": "FORM_RESPONSE",
-        "createdAt": "2024-01-15T14:00:00Z",
-        "data": {
-            "responseId": "resp_abc123",
-            "formId": "form_x",
-            "fields": fields,
-        },
-    }
-
-
-@pytest.fixture
-def client(monkeypatch):
-    secret = "unit-test-secret"
-    monkeypatch.setenv("TALLY_WEBHOOK_SECRET", secret)
-    import main as app_main
-
-    monkeypatch.setattr(app_main, "run_pipeline", lambda *a, **k: None)
-    monkeypatch.setattr(app_main, "run_h5_pipeline", lambda *a, **k: None)
-    return TestClient(app_main.app), secret
-
-
-def test_health(client):
-    c, _ = client
-    r = c.get("/health")
-    assert r.status_code == 200
-    data = r.json()
-    assert data["status"] == "ok"
-    assert data["version"]
-
-
-def test_webhook_ok_with_valid_signature(client):
-    c, secret = client
-    payload = _full_payload()
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    sig = _sign_body(body, secret)
-    r = c.post(
-        "/webhook/tally",
-        content=body,
-        headers={"Content-Type": "application/json", "Tally-Signature": sig},
-    )
-    assert r.status_code == 200
-    assert r.json() == {"status": "received", "responseId": "resp_abc123"}
-
-
-def test_webhook_invalid_signature(client):
-    c, _ = client
-    payload = _full_payload()
-    body = json.dumps(payload).encode("utf-8")
-    r = c.post(
-        "/webhook/tally",
-        content=body,
-        headers={"Content-Type": "application/json", "Tally-Signature": "wrong"},
-    )
-    assert r.status_code == 400
-    assert r.json()["error"] == "invalid_signature"
-
-
-def test_webhook_missing_required_fields(client):
-    c, secret = client
-    payload = _full_payload()
-    payload["data"]["fields"] = [
-        {"key": "nickname", "value": "x"},
-        {"key": "contact", "value": "a@b.com"},
-        {"key": "A1", "value": 1},
-    ]
-    body = json.dumps(payload).encode("utf-8")
-    sig = _sign_body(body, secret)
-    r = c.post(
-        "/webhook/tally",
-        content=body,
-        headers={"Content-Type": "application/json", "Tally-Signature": sig},
-    )
-    assert r.status_code == 422
-    data = r.json()
-    assert data["error"] == "missing_required_fields"
-    assert "A2" in data["fields"]
-
-
-def test_verify_tally_signature_accepts_sha256_hex_prefix():
-    from main import verify_tally_signature
-
-    body = b'{"eventId":"1"}'
-    secret = "sec"
-    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256)
-    assert verify_tally_signature(body, "sha256=" + mac.hexdigest(), secret)
-    assert verify_tally_signature(body, base64.b64encode(mac.digest()).decode("ascii"), secret)
 
 
 def _wechat_signature(token: str, timestamp: str, nonce: str) -> str:
@@ -116,48 +10,20 @@ def _wechat_signature(token: str, timestamp: str, nonce: str) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-def test_wechat_callback_returns_echostr(client, monkeypatch):
-    token = "wechat-test-token"
-    monkeypatch.setenv("WECHAT_TOKEN", token)
-    c, _ = client
-    ts, nonce = "1700000000", "random-nonce"
-    sig = _wechat_signature(token, ts, nonce)
-    r = c.get(
-        "/wechat/callback",
-        params={
-            "signature": sig,
-            "timestamp": ts,
-            "nonce": nonce,
-            "echostr": "plain-echo-123",
-        },
-    )
+@pytest.fixture
+def client(monkeypatch):
+    import main as app_main
+
+    monkeypatch.setattr(app_main, "run_h5_pipeline", lambda *a, **k: None)
+    return TestClient(app_main.app)
+
+
+def test_health(client):
+    r = client.get("/health")
     assert r.status_code == 200
-    assert r.text == "plain-echo-123"
-    assert "text/plain" in r.headers.get("content-type", "")
-
-
-def test_wechat_callback_403_on_bad_signature(client, monkeypatch):
-    monkeypatch.setenv("WECHAT_TOKEN", "correct-token")
-    c, _ = client
-    r = c.get(
-        "/wechat/callback",
-        params={
-            "signature": "deadbeef" * 5,
-            "timestamp": "1",
-            "nonce": "2",
-            "echostr": "x",
-        },
-    )
-    assert r.status_code == 403
-    assert r.text == ""
-    assert "text/plain" in r.headers.get("content-type", "")
-
-
-def test_wechat_callback_403_when_query_incomplete(client, monkeypatch):
-    monkeypatch.setenv("WECHAT_TOKEN", "t")
-    c, _ = client
-    r = c.get("/wechat/callback", params={"signature": "a", "timestamp": "b"})
-    assert r.status_code == 403
+    data = r.json()
+    assert data["status"] == "ok"
+    assert data["version"]
 
 
 def _h5_answers():
@@ -176,121 +42,57 @@ def _assert_quiz_submit_processing(r):
 
 
 def test_quiz_submit_returns_processing(client):
-    c, _ = client
-    r = c.post(
+    r = client.post(
         "/quiz/submit",
-        json={
-            "nickname": "小月",
-            "contact": "u@example.com",
-            "openid": "oOPENID",
-            "answers": _h5_answers(),
-        },
+        json={"nickname": "小月", "openid": "oOPENID", "answers": _h5_answers()},
     )
     _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_openid_empty_ok(client):
-    c, _ = client
-    r = c.post(
+    r = client.post(
         "/quiz/submit",
-        json={
-            "nickname": "小月",
-            "contact": "u@example.com",
-            "openid": "",
-            "answers": _h5_answers(),
-        },
+        json={"nickname": "小月", "openid": "", "answers": _h5_answers()},
     )
     _assert_quiz_submit_processing(r)
 
 
-def test_quiz_submit_empty_contact_uses_wechat_and_openid_ok(client):
-    """H5 不填联系方式时 contact 为空，触达依赖 openid；contact_type 为 wechat。"""
-    c, _ = client
-    r = c.post(
+def test_quiz_submit_omit_openid_ok(client):
+    r = client.post(
         "/quiz/submit",
-        json={
-            "nickname": "小月",
-            "contact": "",
-            "openid": "oOPENID",
-            "answers": _h5_answers(),
-        },
-    )
-    _assert_quiz_submit_processing(r)
-
-
-def test_quiz_submit_omit_contact_ok(client):
-    c, _ = client
-    r = c.post(
-        "/quiz/submit",
-        json={
-            "nickname": "小月",
-            "openid": "oOPENID",
-            "answers": _h5_answers(),
-        },
-    )
-    _assert_quiz_submit_processing(r)
-
-
-def test_quiz_submit_contact_null_ok(client):
-    c, _ = client
-    r = c.post(
-        "/quiz/submit",
-        json={
-            "nickname": "小月",
-            "contact": None,
-            "openid": "oOPENID",
-            "answers": _h5_answers(),
-        },
+        json={"nickname": "小月", "answers": _h5_answers()},
     )
     _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_lowercase_answer_keys_ok(client):
     """前端若传 a1/b6 等小写键，须与 A1/B6 等同视之，避免最后一题被判缺字段。"""
-    c, _ = client
     answers = {}
     for i in range(1, 7):
         answers[f"a{i}"] = 4
         answers[f"b{i}"] = 3
-    r = c.post(
+    r = client.post(
         "/quiz/submit",
-        json={
-            "nickname": "小月",
-            "contact": "u@example.com",
-            "openid": "",
-            "answers": answers,
-        },
+        json={"nickname": "小月", "openid": "", "answers": answers},
     )
     _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_float_answer_values_ok(client):
-    c, _ = client
     answers = {f"A{i}": 4.0 for i in range(1, 7)} | {f"B{i}": 3.0 for i in range(1, 7)}
-    r = c.post(
+    r = client.post(
         "/quiz/submit",
-        json={
-            "nickname": "x",
-            "contact": "a@b.com",
-            "openid": "",
-            "answers": answers,
-        },
+        json={"nickname": "x", "openid": "", "answers": answers},
     )
     _assert_quiz_submit_processing(r)
 
 
 def test_quiz_submit_validation_error(client):
-    c, _ = client
     answers = _h5_answers()
     del answers["A2"]
-    r = c.post(
+    r = client.post(
         "/quiz/submit",
-        json={
-            "nickname": "x",
-            "contact": "a@b.com",
-            "openid": "",
-            "answers": answers,
-        },
+        json={"nickname": "x", "openid": "", "answers": answers},
     )
     assert r.status_code == 422
     body = r.json()
@@ -298,10 +100,40 @@ def test_quiz_submit_validation_error(client):
     assert "A2" in body["fields"]
 
 
+def test_wechat_callback_returns_echostr(client, monkeypatch):
+    token = "wechat-test-token"
+    monkeypatch.setenv("WECHAT_TOKEN", token)
+    ts, nonce = "1700000000", "random-nonce"
+    sig = _wechat_signature(token, ts, nonce)
+    r = client.get(
+        "/wechat/callback",
+        params={"signature": sig, "timestamp": ts, "nonce": nonce, "echostr": "plain-echo-123"},
+    )
+    assert r.status_code == 200
+    assert r.text == "plain-echo-123"
+    assert "text/plain" in r.headers.get("content-type", "")
+
+
+def test_wechat_callback_403_on_bad_signature(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "correct-token")
+    r = client.get(
+        "/wechat/callback",
+        params={"signature": "deadbeef" * 5, "timestamp": "1", "nonce": "2", "echostr": "x"},
+    )
+    assert r.status_code == 403
+    assert r.text == ""
+    assert "text/plain" in r.headers.get("content-type", "")
+
+
+def test_wechat_callback_403_when_query_incomplete(client, monkeypatch):
+    monkeypatch.setenv("WECHAT_TOKEN", "t")
+    r = client.get("/wechat/callback", params={"signature": "a", "timestamp": "b"})
+    assert r.status_code == 403
+
+
 def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://h5.example.com")
-    c, _ = client
     ts, nonce = "1700000002", "nonce-sub"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -311,7 +143,7 @@ def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
 <MsgType><![CDATA[event]]></MsgType>
 <Event><![CDATA[subscribe]]></Event>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -330,7 +162,6 @@ def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
 def test_wechat_post_text_default_reply(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
-    c, _ = client
     ts, nonce = "1700000003", "n-text"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -340,7 +171,7 @@ def test_wechat_post_text_default_reply(client, monkeypatch):
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[hi]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -353,7 +184,6 @@ def test_wechat_post_text_default_reply(client, monkeypatch):
 
 def test_wechat_post_text_keyword_redeem_code(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
-    c, _ = client
     ts, nonce = "1700000010", "n-redeem"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -363,7 +193,7 @@ def test_wechat_post_text_keyword_redeem_code(client, monkeypatch):
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[给我兑换码]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -376,7 +206,6 @@ def test_wechat_post_text_keyword_coupon_before_other_words(client, monkeypatch)
     """含「优惠码」与其它字时仍匹配优惠码分支。"""
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
-    c, _ = client
     ts, nonce = "1700000011", "n-coupon"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -386,7 +215,7 @@ def test_wechat_post_text_keyword_coupon_before_other_words(client, monkeypatch)
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[优惠码报告]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -398,7 +227,6 @@ def test_wechat_post_text_keyword_coupon_before_other_words(client, monkeypatch)
 def test_wechat_post_text_report_no_history_shows_retest_link(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
-    c, _ = client
     ts, nonce = "1700000012", "n-report"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -408,7 +236,7 @@ def test_wechat_post_text_report_no_history_shows_retest_link(client, monkeypatc
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[报告]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -424,7 +252,6 @@ def test_wechat_post_text_report_with_stored_id(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
     monkeypatch.setattr(app_main, "get_latest_report", lambda oid: "resp-saved-9" if oid == "u" else None)
-    c, _ = client
     ts, nonce = "1700000012b", "n-report2"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -434,7 +261,7 @@ def test_wechat_post_text_report_with_stored_id(client, monkeypatch):
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[报告]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -447,7 +274,6 @@ def test_wechat_post_text_report_with_stored_id(client, monkeypatch):
 def test_wechat_post_text_start_returns_quiz_link(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://x.com")
-    c, _ = client
     ts, nonce = "1700000013", "n-start"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -457,7 +283,7 @@ def test_wechat_post_text_start_returns_quiz_link(client, monkeypatch):
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[开始]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -469,7 +295,6 @@ def test_wechat_post_text_start_returns_quiz_link(client, monkeypatch):
 
 def test_wechat_post_click_contact_us(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
-    c, _ = client
     ts, nonce = "1700000014", "n-contact"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -480,7 +305,7 @@ def test_wechat_post_click_contact_us(client, monkeypatch):
 <Event><![CDATA[CLICK]]></Event>
 <EventKey><![CDATA[CONTACT_US]]></EventKey>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -492,7 +317,6 @@ def test_wechat_post_click_contact_us(client, monkeypatch):
 
 def test_wechat_post_click_contact_us_event_key_case_insensitive(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
-    c, _ = client
     ts, nonce = "1700000015", "n-contact2"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -503,7 +327,7 @@ def test_wechat_post_click_contact_us_event_key_case_insensitive(client, monkeyp
 <Event><![CDATA[CLICK]]></Event>
 <EventKey><![CDATA[contact_us]]></EventKey>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -514,7 +338,6 @@ def test_wechat_post_click_contact_us_event_key_case_insensitive(client, monkeyp
 
 def test_wechat_post_text_redeem_uses_xml_newlines(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
-    c, _ = client
     ts, nonce = "1700000016", "n-nl"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -524,7 +347,7 @@ def test_wechat_post_text_redeem_uses_xml_newlines(client, monkeypatch):
 <MsgType><![CDATA[text]]></MsgType>
 <Content><![CDATA[兑换码]]></Content>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -537,7 +360,6 @@ def test_wechat_post_text_redeem_uses_xml_newlines(client, monkeypatch):
 
 def test_wechat_post_click_unknown_key_returns_coming_soon(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
-    c, _ = client
     ts, nonce = "1700000004", "n-other"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -548,7 +370,7 @@ def test_wechat_post_click_unknown_key_returns_coming_soon(client, monkeypatch):
 <Event><![CDATA[CLICK]]></Event>
 <EventKey><![CDATA[OTHER_KEY]]></EventKey>
 </xml>"""
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": sig, "timestamp": ts, "nonce": nonce},
         content=xml_body.encode("utf-8"),
@@ -559,8 +381,7 @@ def test_wechat_post_click_unknown_key_returns_coming_soon(client, monkeypatch):
 
 def test_wechat_post_invalid_signature_403(client, monkeypatch):
     monkeypatch.setenv("WECHAT_TOKEN", "secret")
-    c, _ = client
-    r = c.post(
+    r = client.post(
         "/wechat/callback",
         params={"signature": "bad", "timestamp": "1", "nonce": "2"},
         content=b"<xml></xml>",
@@ -571,13 +392,8 @@ def test_wechat_post_invalid_signature_403(client, monkeypatch):
 def test_download_pdf_ok(client, monkeypatch):
     import main as app_main
 
-    monkeypatch.setattr(
-        app_main,
-        "get_pdf_bytes",
-        lambda response_id, settings: b"%PDF-1.4 unit",
-    )
-    c, _ = client
-    r = c.get("/download/resp-abc123")
+    monkeypatch.setattr(app_main, "get_pdf_bytes", lambda response_id, settings: b"%PDF-1.4 unit")
+    r = client.get("/download/resp-abc123")
     assert r.status_code == 200
     assert r.content == b"%PDF-1.4 unit"
     assert r.headers.get("content-type") == "application/pdf"
@@ -593,8 +409,7 @@ def test_download_pdf_not_found(client, monkeypatch):
         raise FileNotFoundError(_rid)
 
     monkeypatch.setattr(app_main, "get_pdf_bytes", _raise)
-    c, _ = client
-    r = c.get("/download/missing-id")
+    r = client.get("/download/missing-id")
     assert r.status_code == 404
 
 
@@ -605,8 +420,7 @@ def test_download_pdf_bad_request(client, monkeypatch):
         raise ValueError("bad id")
 
     monkeypatch.setattr(app_main, "get_pdf_bytes", _bad)
-    c, _ = client
-    r = c.get("/download/x")
+    r = client.get("/download/x")
     assert r.status_code == 400
 
 
@@ -621,13 +435,8 @@ def test_report_data_ok(client, monkeypatch):
         "nickname": "小月",
         "sections": {"overview": "# 标题\n正文"},
     }
-    monkeypatch.setattr(
-        app_main,
-        "get_report_json",
-        lambda response_id, settings: payload,
-    )
-    c, _ = client
-    r = c.get("/report-data/resp-abc123")
+    monkeypatch.setattr(app_main, "get_report_json", lambda response_id, settings: payload)
+    r = client.get("/report-data/resp-abc123")
     assert r.status_code == 200
     assert r.json() == payload
 
@@ -639,8 +448,7 @@ def test_report_data_not_found(client, monkeypatch):
         raise FileNotFoundError(_rid)
 
     monkeypatch.setattr(app_main, "get_report_json", _missing)
-    c, _ = client
-    r = c.get("/report-data/missing-id")
+    r = client.get("/report-data/missing-id")
     assert r.status_code == 404
 
 
@@ -651,6 +459,5 @@ def test_report_data_bad_request(client, monkeypatch):
         raise ValueError("bad id")
 
     monkeypatch.setattr(app_main, "get_report_json", _bad)
-    c, _ = client
-    r = c.get("/report-data/x")
+    r = client.get("/report-data/x")
     assert r.status_code == 400
