@@ -13,7 +13,9 @@ from typing import Any, Dict, Optional
 from urllib.parse import quote
 
 from fastapi import BackgroundTasks, FastAPI, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
 
 from app_logging import setup_logging
 from classifier import classify_from_quiz
@@ -23,18 +25,21 @@ from models import (
     QuizH5SubmitBody,
     QuizParseError,
 )
-from pdf_generator import render_report_pdf
-from report_builder import ReportData, build_report
+from pdf_generator import PDF_DOCUMENT_TITLE, prepare_report_for_web_display, render_report_pdf
+from report_builder import ReportData, build_report, report_data_from_stored_dict
 from storage import (
     get_pdf_bytes,
     get_report_json,
     upload_pdf_with_signed_url,
     upload_report_json,
 )
-from wechat_pusher import send_report_link
+from wechat_pusher import send_report_link, send_subscribe_qrcode_image
 
-OPENID_REPORT_MAP = Path(__file__).parent / "data" / "openid_report.json"
+BASE_DIR = Path(__file__).resolve().parent
+OPENID_REPORT_MAP = BASE_DIR / "data" / "openid_report.json"
 OPENID_REPORT_MAP.parent.mkdir(exist_ok=True)
+
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 def save_openid_report(openid: str, response_id: str) -> None:
@@ -156,6 +161,8 @@ def _wx_subscribe_welcome_body(settings: Settings) -> str:
         "https://hepaima.kyx123.com\n\n"
         "🧠 测测你的依恋类型：\n"
         f"{_wx_attachment_test_url(settings)}\n\n"
+        "✨ 新上线 MBTI x 星座匹配测试：\n"
+        "https://peibupei.kyx123.com/\n\n"
         "如有疑问或建议，欢迎添加微信：SentioLab 进行反馈"
     )
 
@@ -268,6 +275,31 @@ def download_pdf(response_id: str) -> Any:
     )
 
 
+@app.get("/report/{response_id}", response_class=HTMLResponse, response_model=None)
+def report_web_page(request: Request, response_id: str) -> Any:
+    """浏览器报告页：内容区最大宽度与常见 H5 一致，PC 访问亦为窄版居中。"""
+    settings = get_settings()
+    try:
+        raw = get_report_json(response_id, settings)
+    except ValueError:
+        return Response(status_code=400)
+    except FileNotFoundError:
+        return Response(status_code=404)
+    report = report_data_from_stored_dict(raw)
+    report_html = prepare_report_for_web_display(report)
+    qrcode_path = BASE_DIR / "static" / "qrcode.png"
+    qrcode_url = "/static/qrcode.png" if qrcode_path.is_file() else None
+    return templates.TemplateResponse(
+        request,
+        "report_web.html",
+        {
+            "report": report_html,
+            "pdf_document_title": PDF_DOCUMENT_TITLE,
+            "qrcode_url": qrcode_url,
+        },
+    )
+
+
 @app.get("/report-data/{response_id}", response_model=None)
 def report_data(response_id: str) -> Any:
     """从 OSS 读取生成报告时写入的结构化 JSON（sections 为原始 Markdown）。"""
@@ -351,6 +383,13 @@ async def wechat_callback_message(
     subscribe_welcome = _wx_subscribe_welcome_body(settings)
 
     if msg_type == "event" and event.lower() == "subscribe":
+        if from_user:
+            threading.Thread(
+                target=send_subscribe_qrcode_image,
+                args=(from_user,),
+                daemon=True,
+                name=f"wx-subscribe-qrcode-{from_user[:8]}",
+            ).start()
         xml = _wx_reply_text_xml(from_user, to_user, subscribe_welcome)
         return Response(
             content=xml,
@@ -402,4 +441,8 @@ async def quiz_submit(
     background_tasks.add_task(run_h5_pipeline, quiz, response_id, settings, openid)
     return {"status": "processing", "responseId": response_id}
 
+
+_static_dir = BASE_DIR / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 

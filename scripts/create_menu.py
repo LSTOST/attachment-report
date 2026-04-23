@@ -34,9 +34,9 @@ def _menu_body() -> dict:
                 "url": "https://hepaima.kyx123.com/attachment-test",
             },
             {
-                "type": "click",
-                "name": "联系我们",
-                "key": "CONTACT_US",
+                "type": "view",
+                "name": "MBTI测试",
+                "url": "https://peibupei.kyx123.com/",
             },
         ],
     }

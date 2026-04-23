@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import httpx
@@ -18,6 +19,8 @@ _token_deadline: float = 0.0
 TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token"
 CUSTOM_SEND_URL = "https://api.weixin.qq.com/cgi-bin/message/custom/send"
 REFRESH_SKEW_SECONDS = 120
+MEDIA_UPLOAD_URL = "https://api.weixin.qq.com/cgi-bin/media/upload"
+_SUBSCRIBE_QRCODE_PATH = Path(__file__).resolve().parent / "static" / "WeChat_Code.png"
 
 
 def _fetch_token_from_api(settings: Settings) -> Tuple[Optional[str], int]:
@@ -131,5 +134,70 @@ def send_report_link(openid: str, response_id: str, nickname: str) -> None:
     except Exception:
         logger.exception(
             "wechat_pusher: send_report_link failed openid=%s",
+            openid[:8] + "…" if len(openid) > 8 else openid,
+        )
+
+
+def send_subscribe_qrcode_image(openid: str) -> None:
+    """关注后通过客服消息发送二维码图片（先上传临时素材，再发 image 消息）。"""
+    try:
+        settings = get_settings()
+        token = get_access_token(settings)
+        if not token:
+            logger.error(
+                "wechat_pusher: skip send_subscribe_qrcode_image (no access_token) openid=%s",
+                openid[:8] + "…" if len(openid) > 8 else openid,
+            )
+            return
+        if not _SUBSCRIBE_QRCODE_PATH.is_file():
+            logger.error(
+                "wechat_pusher: qrcode image not found path=%s",
+                str(_SUBSCRIBE_QRCODE_PATH),
+            )
+            return
+
+        with _SUBSCRIBE_QRCODE_PATH.open("rb") as fp:
+            files = {"media": ("WeChat_Code.png", fp, "image/png")}
+            with httpx.Client(timeout=20.0) as client:
+                upload_resp = client.post(
+                    f"{MEDIA_UPLOAD_URL}?access_token={token}&type=image",
+                    files=files,
+                )
+                upload_resp.raise_for_status()
+                upload_data: dict[str, Any] = upload_resp.json()
+
+                media_id = upload_data.get("media_id")
+                if upload_data.get("errcode") or not media_id:
+                    logger.error(
+                        "wechat_pusher: media upload failed errcode=%s errmsg=%s openid=%s",
+                        upload_data.get("errcode"),
+                        upload_data.get("errmsg"),
+                        openid[:8] + "…" if len(openid) > 8 else openid,
+                    )
+                    return
+
+                payload = {
+                    "touser": openid,
+                    "msgtype": "image",
+                    "image": {"media_id": media_id},
+                }
+                send_resp = client.post(
+                    f"{CUSTOM_SEND_URL}?access_token={token}",
+                    json=payload,
+                )
+                send_resp.raise_for_status()
+                send_data: dict[str, Any] = send_resp.json()
+
+        errcode = send_data.get("errcode", 0)
+        if errcode not in (0, None):
+            logger.error(
+                "wechat_pusher: send qrcode image failed errcode=%s errmsg=%s openid=%s",
+                errcode,
+                send_data.get("errmsg"),
+                openid[:8] + "…" if len(openid) > 8 else openid,
+            )
+    except Exception:
+        logger.exception(
+            "wechat_pusher: send_subscribe_qrcode_image failed openid=%s",
             openid[:8] + "…" if len(openid) > 8 else openid,
         )

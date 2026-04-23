@@ -132,8 +132,30 @@ def test_wechat_callback_403_when_query_incomplete(client, monkeypatch):
 
 
 def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
+    import main as app_main
+
     monkeypatch.setenv("WECHAT_TOKEN", "wx-tok")
     monkeypatch.setenv("H5_BASE_URL", "https://h5.example.com")
+    called: list[str] = []
+
+    def _fake_send_subscribe_qrcode_image(openid: str) -> None:
+        called.append(openid)
+
+    class _ImmediateThread:
+        def __init__(self, target, args=(), **kwargs):
+            self._target = target
+            self._args = args
+
+        def start(self):
+            self._target(*self._args)
+
+    monkeypatch.setattr(
+        app_main,
+        "send_subscribe_qrcode_image",
+        _fake_send_subscribe_qrcode_image,
+    )
+    monkeypatch.setattr(app_main.threading, "Thread", _ImmediateThread)
+
     ts, nonce = "1700000002", "nonce-sub"
     sig = _wechat_signature("wx-tok", ts, nonce)
     xml_body = """<xml>
@@ -154,9 +176,11 @@ def test_wechat_post_subscribe_returns_welcome_xml(client, monkeypatch):
     assert "欢迎关注知我实验室" in r.text
     assert "https://hepaima.kyx123.com" in r.text
     assert "https://h5.example.com/attachment-test" in r.text
+    assert "https://peibupei.kyx123.com/" in r.text
     assert "SentioLab" in r.text
     assert "oUserOpenId" in r.text
     assert "gh_service" in r.text
+    assert called == ["oUserOpenId"]
 
 
 def test_wechat_post_text_default_reply(client, monkeypatch):
@@ -461,3 +485,41 @@ def test_report_data_bad_request(client, monkeypatch):
     monkeypatch.setattr(app_main, "get_report_json", _bad)
     r = client.get("/report-data/x")
     assert r.status_code == 400
+
+
+def test_report_web_ok(client, monkeypatch):
+    import main as app_main
+
+    payload = {
+        "type_code": "SECURE",
+        "type_name_cn": "安全型",
+        "anxiety_score": 3.0,
+        "avoidance_score": 3.0,
+        "nickname": "小月",
+        "sections": {
+            "overview": "# 总览\n段落",
+            "patterns": "# 模式\n段落",
+            "conflicts": "# 冲突\n段落",
+            "compatibility": "# 匹配\n段落",
+            "exercises": "# 练习\n段落",
+        },
+    }
+    monkeypatch.setattr(app_main, "get_report_json", lambda response_id, settings: payload)
+    r = client.get("/report/resp-web-1")
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+    body = r.text
+    assert "h5-shell" in body
+    assert "小月" in body
+    assert "安全型" in body
+
+
+def test_report_web_not_found(client, monkeypatch):
+    import main as app_main
+
+    def _missing(_rid, _s):
+        raise FileNotFoundError(_rid)
+
+    monkeypatch.setattr(app_main, "get_report_json", _missing)
+    r = client.get("/report/missing-id")
+    assert r.status_code == 404
