@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from classifier import TypeCode
 
@@ -68,4 +69,16 @@ def build_report(
         avoidance_score=avoidance_score,
         nickname=nickname,
         sections=sections,
+    )
+
+
+def report_data_from_stored_dict(data: dict[str, Any]) -> ReportData:
+    """从 OSS 上存储的 JSON（与 asdict(ReportData) 一致）还原为 ReportData。"""
+    return ReportData(
+        type_code=data["type_code"],
+        type_name_cn=data["type_name_cn"],
+        anxiety_score=float(data["anxiety_score"]),
+        avoidance_score=float(data["avoidance_score"]),
+        nickname=data["nickname"],
+        sections=dict(data["sections"]),
     )

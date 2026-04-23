@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>{{ pdf_document_title }} — {{ report.type_name_cn }}</title>
+  <style>
+    /* PC 浏览器：整页浅灰底，内容区固定为常见 H5 逻辑宽度并居中，与手机微信内打开观感一致 */
+    :root {
+      --h5-max-width: 428px;
+      --text: #222;
+      --muted: #555;
+      --border: #e5e5ea;
+    }
+    * { box-sizing: border-box; }
+    html { height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--text);
+      background: #e8e8ed;
+    }
+    .h5-shell {
+      max-width: var(--h5-max-width);
+      width: 100%;
+      margin: 0 auto;
+      min-height: 100vh;
+      background: #fff;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+      padding: 20px 18px 32px;
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin: 0 0 8px;
+      line-height: 1.35;
+    }
+    .meta { color: var(--muted); margin-bottom: 22px; font-size: 0.88rem; }
+    .meta p { margin: 0.35em 0; }
+    h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 22px 0 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-body { margin-top: 6px; }
+    .section-body h2 { font-size: 1rem; border: none; margin-top: 14px; padding-bottom: 0; }
+    .section-body h3 { font-size: 0.95rem; margin-top: 12px; }
+    .section-body p { margin: 0.55em 0; }
+    .section-body ul, .section-body ol { margin: 0.5em 0; padding-left: 1.25em; }
+    hr { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+    .web-end-footer {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    }
+    .web-end-footer img {
+      width: 180px;
+      height: 180px;
+      object-fit: contain;
+      display: inline-block;
+      vertical-align: bottom;
+    }
+    .web-end-footer-note {
+      margin-top: 12px;
+      margin-bottom: 0;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      color: #8a8aaa;
+    }
+  </style>
+</head>
+<body>
+  <div class="h5-shell">
+    <h1>{{ pdf_document_title }}</h1>
+    <div class="meta">
+      <p>{{ report.nickname }}，你好。你的依恋倾向分型为：<strong>{{ report.type_name_cn }}</strong>（{{ report.type_code }}）</p>
+      <p>焦虑维度均分：{{ report.anxiety_score }}　回避维度均分：{{ report.avoidance_score }}</p>
+    </div>
+
+    <h2>总览</h2>
+    <div class="section-body">{{ report.sections.overview | safe }}</div>
+
+    <h2>关系模式</h2>
+    <div class="section-body">{{ report.sections.patterns | safe }}</div>
+
+    <h2>内在冲突</h2>
+    <div class="section-body">{{ report.sections.conflicts | safe }}</div>
+
+    <h2>相处与匹配</h2>
+    <div class="section-body">{{ report.sections.compatibility | safe }}</div>
+
+    <h2>练习建议</h2>
+    <div class="section-body">{{ report.sections.exercises | safe }}</div>
+
+    {% if qrcode_url %}
+    <div class="web-end-footer">
+      <img src="{{ qrcode_url }}" alt="服务号二维码" />
+      <p class="web-end-footer-note">知我实验室出品 · 仅供个人参考</p>
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

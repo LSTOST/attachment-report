@@ -50,6 +50,11 @@ def _resolve_noto_fonts(static_dir: Path) -> tuple[Path, Path, str]:
     )
 
 
+def prepare_report_for_web_display(report: ReportData) -> ReportData:
+    """将各章节 Markdown 转为 HTML，供浏览器报告页使用（与 PDF 同一套转换与标题规则）。"""
+    return _report_with_html_sections(report)
+
+
 def _report_with_html_sections(report: ReportData) -> ReportData:
     md = markdown.Markdown(extensions=["nl2br", "sane_lists"])
     html_sections: dict[str, str] = {}
